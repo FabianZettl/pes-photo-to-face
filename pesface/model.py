@@ -196,3 +196,41 @@ def extra_samples(names):
             X.append(cache[key]); Y.append([float(t[n]) for n in names]); ids.append(f.stem)
     pickle.dump(cache, open(cache_f, "wb"))
     return (np.array(X, dtype=float), np.array(Y), ids) if X else None
+
+
+_STOP = {"fc", "cf", "ac", "sc", "afc", "ssc", "as", "us", "sv", "fk", "sk", "club", "de", "the", "1", "04", "05", "09", "1846", "1899", "calcio"}
+
+
+def _tokens(s):
+    return [t for t in _fold(s).replace("-", " ").replace(".", " ").split() if t]
+
+
+def _team_score(fm_team, fl_teams):
+    """0..1: how well the FM club name fits any of the FL teams of a player (word overlap, ignoring FC/CF/...)."""
+    a = {t for t in _tokens(fm_team) if t not in _STOP}
+    best = 0.0
+    for team in fl_teams:
+        b = {t for t in _tokens(team) if t not in _STOP}
+        if a and b:
+            import difflib   # "munich" ~ "munchen": a word counts when it is similar enough, not only when equal
+            hit = sum(any(difflib.SequenceMatcher(None, x, y).ratio() >= 0.75 for y in b) for x in a)
+            best = max(best, hit / max(len(a), len(b)))
+    return best
+
+
+def match_players(name, team="", limit=5):
+    """Candidates [{id, name, teams, score}] for a player name and club as FMInside writes them.
+    Score = 0.75 * name similarity + 0.25 * club similarity; only players sharing a name word are considered."""
+    import difflib
+    search_players("", limit=0)   # loads the list
+    nt = _tokens(name)
+    out = []
+    for p in _players:
+        pt = _tokens(p["name"])
+        if not set(nt) & set(pt):
+            continue
+        n1 = difflib.SequenceMatcher(None, " ".join(nt), " ".join(pt)).ratio()
+        n2 = difflib.SequenceMatcher(None, " ".join(sorted(nt)), " ".join(sorted(pt))).ratio()
+        score = 0.75 * max(n1, n2) + 0.25 * _team_score(team, p["teams"])
+        out.append({"id": p["id"], "name": p["name"], "teams": p["teams"], "has_face": p["has_face"], "score": round(score, 3)})
+    return sorted(out, key=lambda c: -c["score"])[:limit]

@@ -17,6 +17,7 @@ It is an estimate, not magic. The result is a good starting point that you fine-
 | `pesface/` + `web/` | Python tool with a web UI: photo → values → CSV queue. Tabs: *Erkennen* (recognise), *Training*, *Haare* (hand-label hair), *Bulk* (folder of photos). |
 | `sider/faceai.lua` | Sider module: reads the CSV, writes the values into the game's appearance table, inserts records for players that have none (new-world players). |
 | `sider/faceai_probe.lua` | Read-only helper: dumps the appearance table (F8) – this is how the record layout was reverse-engineered, and how you check your own build. |
+| `userscript/` + `pesface/stats.py` + `sider/faceai_stats.lua` | Optional FMInside hand-off: one click on a player page *you opened* sends name, club, stats and photo to the local tool; stats are converted to PES values and written by `faceai_stats.lua`. |
 | `data/layout.json`, [docs/appearance-record.md](docs/appearance-record.md) | The 72-byte appearance record: which bits hold which setting. **This is the part other tools can reuse.** |
 
 ## Quick start
@@ -53,6 +54,24 @@ python -m pesface serve                    # http://localhost:8000
 `python -m pesface players players_dump.bin dump_XXXX.bin <folder with Team.bin and PlayerAssignment.bin>`.
 Without it you can still type player IDs.
 
+## FMInside hand-off (optional)
+
+For players that exist in your database, take the photo and the Football Manager values from their FMInside page:
+
+1. Install `userscript/fminside-to-pes-face-ai.user.js` in Tampermonkey/Violentmonkey.
+2. Open a player page on fminside.net yourself and click **→ PES Face AI**. Nothing is crawled or searched: the script reads
+   the one page you are on and hands it to your local server (`localhost:8000`).
+3. In the tool open the **FM** tab. The player is matched against your player list by name and club; you confirm (or pick
+   another player) and press *Übernehmen*. The face goes into `faceai.csv`, the converted stats into `faceai_stats.csv`.
+   The photo stays in memory only and is dropped when you confirm; it is never used for training.
+4. In game: **F9** (`faceai.lua`) writes the face. For the stats press **F7** in PlayerDump once per launch (it writes the
+   table address), then **F5** in `faceai_stats.lua`.
+
+The FM → PES conversion (`pesface/stats.py`) is a simple weighted mapping, not a calibrated converter. The userscript's
+selectors are best guesses for the current FMInside layout; if the site changes it tells you what it could not find.
+Respect the site's terms: it reserves its content against AI training, so photos from it must not go into the training
+folders. `faceai_stats.lua` is experimental: not yet verified in game; every write is read back and logged.
+
 ## Training
 
 - **Face:** the base model uses ~1,000 players from the original project. In the *Training* tab you add photos of
@@ -70,7 +89,7 @@ def get(record: bytes, pos: int, width: int, bias: int) -> int:
     return ((bits >> pos) & ((1 << width) - 1)) - bias
 ```
 
-Writing is the reverse. `tests/check_layout.py` checks the table for overlaps.
+Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `tests/check_stats.py` the stat conversion.
 
 ## Limits (please read)
 
@@ -91,7 +110,7 @@ Writing is the reverse. `tests/check_layout.py` checks the table for overlaps.
 - **juce** – Sider (PES Sider, announced on the evo-web forum), which makes in-game Lua modules possible.
 - The **Football Life 26/27 module set** (`fl26appcap`, `fl26regen`, FL26 Mod Studio) – their comments documented the
   appearance table size and how new-world players get faces; `faceai.lua` is written to coexist with them.
-- **Karijera 26** `PlayerDump` – optional source of the player list (not included).
+- **Karijera 26** – `PlayerDump` (optional source of the player list) and `GrowthBridge`, whose documented player-block layout (7-bit attribute fields) `faceai_stats.lua` uses. Not included.
 - **DeepFace** (Sefik Ilkin Serengil) and **FaceNet** – face embeddings.
 - **MediaPipe** (Google, Apache-2.0) – hair segmentation model, downloaded on first use.
 - **OpenAI CLIP** via Hugging Face Transformers – zero-shot hairstyle step.

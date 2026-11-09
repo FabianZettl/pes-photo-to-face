@@ -1,7 +1,7 @@
 import contextlib, io, os, tempfile, time
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Request, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -9,6 +9,25 @@ from . import model
 from .encoder import photo_warnings, predict_all
 
 app = FastAPI()
+
+# The server has no login, so a web page you happen to visit must not be able to drive it:
+# state-changing requests are accepted only from our own UI (or without an Origin header, e.g. curl and
+# userscript managers), and /api/fm/* additionally from fminside.net pages.
+OWN = {"http://localhost:8000", "http://127.0.0.1:8000"}
+FM = {"https://fminside.net", "https://www.fminside.net"}
+
+
+@app.middleware("http")
+async def origin_guard(request, call_next):
+    origin = request.headers.get("origin")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin:
+        ok = OWN | (FM if request.url.path.startswith("/api/fm/") else set())
+        port = os.environ.get("PESFACE_PORT")
+        if port:
+            ok |= {f"http://localhost:{port}", f"http://127.0.0.1:{port}"}
+        if origin not in ok:
+            return JSONResponse({"detail": "Origin nicht erlaubt"}, status_code=403)
+    return await call_next(request)
 WEB = Path(__file__).resolve().parent.parent / "web"
 
 
@@ -193,6 +212,78 @@ def bulk_start(folder: str = Form(...)):
 @app.get("/api/bulk/status")
 def bulk_status():
     return BULK
+
+
+INBOX = {}   # id -> item; photos stay in memory only and are dropped as soon as the item is handled
+MAX_IMG = 8 * 1024 * 1024
+
+
+@app.post("/api/fm/import")
+async def fm_import(request: Request):
+    """From the userscript: one player page opened by the user in his own browser."""
+    import base64, re, uuid
+    d = await request.json()
+    name, team = str(d.get("name", "")).strip(), str(d.get("team", "")).strip()
+    if not name:
+        raise HTTPException(422, "Name fehlt")
+    img = d.get("image") or ""
+    m = re.match(r"data:image/(\w+);base64,(.*)", img, re.S)
+    if not m:
+        raise HTTPException(422, "Bild fehlt (data-URL erwartet)")
+    raw = base64.b64decode(m.group(2))
+    if len(raw) > MAX_IMG:
+        raise HTTPException(413, "Bild zu groß")
+    iid = uuid.uuid4().hex[:8]
+    INBOX[iid] = {"id": iid, "name": name, "team": team, "nationality": str(d.get("nationality", "")),
+                  "dob": str(d.get("dob", "")), "stats": d.get("stats") or {}, "url": str(d.get("url", "")),
+                  "ext": "." + m.group(1).replace("jpeg", "jpg"), "image": raw, "cands": model.match_players(name, team)}
+    return {"ok": True, "id": iid, "best": INBOX[iid]["cands"][:1]}
+
+
+@app.get("/api/fm/inbox")
+def fm_inbox():
+    return [{k: v for k, v in it.items() if k != "image"} for it in INBOX.values()]
+
+
+@app.get("/api/fm/photo/{iid}")
+def fm_photo(iid: str):
+    it = INBOX.get(iid)
+    if not it:
+        raise HTTPException(404)
+    return Response(it["image"], media_type="image/" + it["ext"][1:])
+
+
+@app.post("/api/fm/accept")
+def fm_accept(item_id: str = Form(...), player_id: str = Form(...)):
+    """Confirm the match: compute the face from the photo, queue it, keep the FM stats for later, drop the photo."""
+    import json
+    it = INBOX.get(item_id)
+    if not it or not player_id.isdigit():
+        raise HTTPException(422, "Eintrag oder Spieler-ID ungültig")
+    with tempfile.NamedTemporaryFile(suffix=it["ext"]) as t:
+        t.write(it["image"]); t.flush()
+        try:
+            warn = photo_warnings(t.name)
+            vals = predict_all(t.name)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+    n = model.queue(player_id, vals)
+    f = model.QUEUE.parent / "fm_stats.json"   # raw FM attributes per player id, for a later stat converter
+    store = json.loads(f.read_text()) if f.exists() else {}
+    store[player_id] = {k: it[k] for k in ("name", "team", "nationality", "dob", "stats", "url")}
+    f.write_text(json.dumps(store, ensure_ascii=False))
+    from . import stats
+    conv = stats.convert(it["stats"]) if it["stats"] else {}
+    if conv:   # kept permanently: the game rebuilds its player table at every start
+        stats.queue(model.QUEUE.parent / "faceai_stats.csv", player_id, conv)
+    del INBOX[item_id]
+    return {"queued": player_id, "in_queue": n, "warnings": warn, "stats": len(conv)}
+
+
+@app.post("/api/fm/discard")
+def fm_discard(item_id: str = Form(...)):
+    INBOX.pop(item_id, None)
+    return {"ok": True}
 
 
 @app.get("/api/players")

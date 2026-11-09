@@ -33,7 +33,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
 <main>
 <header>
   <h1>PES Face AI <span>Foto ↔ Face-Werte</span></h1>
-  <div class="tabs"><button id="t1" class="on">Erkennen</button><button id="t2">Training</button><button id="t3">Haare</button><button id="t4">Bulk</button></div>
+  <div class="tabs"><button id="t1" class="on">Erkennen</button><button id="t2">Training</button><button id="t3">Haare</button><button id="t4">Bulk</button><button id="t5">FM</button></div>
 </header>
 
 <div class="col">
@@ -114,6 +114,11 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
     <div class="bar" style="margin-top:12px"><i id="bbar" style="left:0;width:0"></i></div>
     <div class="msg" id="bmsg"></div>
   </div>
+  <div class="card" id="p5" hidden>
+    <h3>FMInside → PES Face AI</h3>
+    <div class="hint" style="margin:0 0 8px">Öffne in deinem Browser eine FMInside-Spielerseite und klicke den Knopf des Userscripts. Der Spieler erscheint hier, du bestätigst den Treffer in der FL-Datenbank.</div>
+    <div class="msg" id="fmmsg"></div>
+  </div>
 </div>
 
 <div class="card" id="out"><span style="color:var(--mut)">Noch kein Ergebnis.</span></div>
@@ -121,7 +126,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
 
 <script>
 const G={Augen:/Eye|Iris|Pupil|Eyelid/,Brauen:/Brow|Temple/,Nase:/Nose|Nostril|Laughter/,Mund:/Lip|Mouth/,'Haare · Vorne':/^Hair(Front|Parting|Hairline|Forehead)/,'Haare · Seite/Hinten':/^HairBack/,'Haare · Gesamt':/^Hair/,Kinn:/Chin|Jaw|Cheek|Neck/,Ohren:/^Ear/,Bart:/Facial|Thickness/,Kopf:/^(Head|Face|Skin|Forehead)/};
-const $=id=>document.getElementById(id);let file,tfile,hfile,tab=1,bpoll;
+const $=id=>document.getElementById(id);let file,tfile,hfile,tab=1,bpoll,fmpoll;
 const say=(el,t,e)=>{$(el).textContent=t;$(el).className='msg'+(e?' err':'')};
 const post=(url,f,extra)=>{const d=new FormData();d.append('photo',f);for(const k in extra)d.append(k,extra[k]);return fetch(url,{method:'POST',body:d})};
 
@@ -139,10 +144,10 @@ function render(values,ranges,title){
 }
 
 // ---- tabs
-function setTab(n){tab=n;$('t1').className=n==1?'on':'';$('t2').className=n==2?'on':'';$('t3').className=n==3?'on':'';$('t4').className=n==4?'on':'';$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('p3').hidden=n!=3;$('p4').hidden=n!=4;$('pcard').hidden=n==3||n==4;
-  $('out').replaceChildren(Object.assign(document.createElement('span'),{textContent:n==1?'Noch kein Ergebnis.':n==2?'Wähle einen Spieler: hier erscheinen seine aktuellen Spieldaten.':n==3?'Foto laden: hier erscheint der Vorschlag des Tools für die Haare.':'Hier erscheint das Ergebnis des Durchlaufs.',style:'color:var(--mut)'}));
+function setTab(n){tab=n;$('t1').className=n==1?'on':'';$('t2').className=n==2?'on':'';$('t3').className=n==3?'on':'';$('t4').className=n==4?'on':'';$('t5').className=n==5?'on':'';$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('p3').hidden=n!=3;$('p4').hidden=n!=4;$('p5').hidden=n!=5;$('pcard').hidden=n==3||n==4||n==5;
+  $('out').replaceChildren(Object.assign(document.createElement('span'),{textContent:n==1?'Noch kein Ergebnis.':n==2?'Wähle einen Spieler: hier erscheinen seine aktuellen Spieldaten.':n==3?'Foto laden: hier erscheint der Vorschlag des Tools für die Haare.':n==4?'Hier erscheint das Ergebnis des Durchlaufs.':'Noch nichts aus FMInside empfangen.',style:'color:var(--mut)'}));
   if(n==2)loadTruth()}
-$('t1').onclick=()=>setTab(1);$('t2').onclick=()=>setTab(2);$('t3').onclick=()=>{setTab(3);hairCount()};$('t4').onclick=()=>setTab(4);
+$('t1').onclick=()=>setTab(1);$('t2').onclick=()=>setTab(2);$('t3').onclick=()=>{setTab(3);hairCount()};$('t4').onclick=()=>setTab(4);$('t5').onclick=()=>{setTab(5);fmLoad()};
 
 // ---- player search (shared)
 let ft;const search=()=>{clearTimeout(ft);ft=setTimeout(async()=>{
@@ -224,4 +229,37 @@ $('bgo').onclick=async()=>{const d=new FormData();d.append('folder',$('bfolder')
   const r=await fetch('/api/bulk/start',{method:'POST',body:d}),j=await r.json();
   if(!r.ok){say('bmsg',j.detail||'Fehler',1);return}
   clearTimeout(bpoll);bulkPoll()};
+
+// ---- tab 5: FMInside inbox
+async function fmLoad(){
+  clearTimeout(fmpoll);if(tab!=5)return;
+  const items=await (await fetch('/api/fm/inbox')).json();
+  const out=$('out');
+  if(!document.querySelector('#out .fmitem')||out.dataset.n!=items.map(i=>i.id).join()){
+    out.dataset.n=items.map(i=>i.id).join();out.replaceChildren();
+    if(!items.length)out.append(Object.assign(document.createElement('span'),{textContent:'Noch nichts aus FMInside empfangen.',style:'color:var(--mut)'}));
+    for(const it of items){
+      const box=document.createElement('div');box.className='fmitem';box.style.cssText='display:grid;grid-template-columns:90px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)';
+      const img=document.createElement('img');img.src='/api/fm/photo/'+it.id;img.style.cssText='width:90px;border-radius:8px';
+      const right=document.createElement('div');
+      const head=document.createElement('div');head.innerHTML='<b></b><div class="hint"></div>';head.firstChild.textContent=it.name;head.lastChild.textContent=[it.team,it.nationality,it.dob].filter(Boolean).join(' · ');
+      const sel=document.createElement('select');sel.style.marginTop='8px';
+      for(const c of it.cands){const o=new Option(`${c.name} · ${c.teams.join(', ')||'ohne Team'} · ${Math.round(c.score*100)} % · ${c.id}${c.has_face?'':' (kein Datensatz)'}`,c.id);sel.add(o)}
+      sel.add(new Option('andere ID …',''));
+      const other=document.createElement('input');other.placeholder='Spieler-ID';other.hidden=true;other.style.marginTop='6px';
+      sel.onchange=()=>other.hidden=sel.value!=='';
+      const warn=document.createElement('div');warn.className='hint';
+      const best=it.cands[0];warn.textContent=!best?'Kein Treffer in der Spielerliste: wähle „andere ID“.':best.score<0.85?'Unsicher: prüfe den Treffer.':'';
+      const row=document.createElement('div');row.className='row';
+      const ok=document.createElement('button');ok.textContent='Übernehmen';
+      const no=document.createElement('button');no.textContent='Verwerfen';no.style.background='var(--line)';no.style.color='var(--fg)';
+      ok.onclick=async()=>{const pid=sel.value||other.value;if(!pid){say('fmmsg','Spieler-ID fehlt',1);return}
+        ok.disabled=true;say('fmmsg','Berechne…');
+        const d=new FormData();d.append('item_id',it.id);d.append('player_id',pid);
+        const r=await fetch('/api/fm/accept',{method:'POST',body:d}),j=await r.json();
+        say('fmmsg',r.ok?`Spieler ${j.queued} in der Queue (${j.in_queue} gesamt), ${j.stats} Werte umgerechnet`+(j.warnings.length?'\n'+j.warnings.join('\n'):''):(j.detail||'Fehler'),!r.ok);
+        ok.disabled=false;if(r.ok){out.dataset.n='';fmLoad()}};
+      no.onclick=async()=>{const d=new FormData();d.append('item_id',it.id);await fetch('/api/fm/discard',{method:'POST',body:d});out.dataset.n='';fmLoad()};
+      row.append(ok,no);right.append(head,sel,other,warn,row);box.append(img,right);out.append(box)}}
+  fmpoll=setTimeout(fmLoad,2500)}
 </script>
