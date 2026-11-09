@@ -108,8 +108,8 @@ def available():
 
 def players(refresh=False):
     """All new-world players, one dict each. Cached; refresh=True re-reads the Mod Studio files."""
-    if "p" in _cache and not refresh:
-        return _cache["p"]
+    if "p" in _cache and not refresh and _cache.get("mtime") == PLAYERIDS.stat().st_mtime:
+        return _cache["p"]   # re-read automatically when Mod Studio wrote a new build
     d = json.loads(PLAYERIDS.read_text(encoding="utf-8"))
     nls = {p["nl"] for m in d["people"].values() for p in m.values()}
     over, nl_clubs = _newlife(nls)
@@ -125,6 +125,7 @@ def players(refresh=False):
                         "overall": over.get(str(p["nl"])), "generic": gid in newfaces,
                         "rendered": gid in rendered})
     _cache["p"] = out
+    _cache["mtime"] = PLAYERIDS.stat().st_mtime
     _cache["by_gid"] = {p["id"]: p for p in out}
     return out
 
@@ -236,7 +237,7 @@ def sync():
     """Write faceai_newworld.csv with the CURRENT game ids and the fingerprint of the build the ids belong to.
     Returns {"written": n, "moved": [..], "gone": n}."""
     st = _store()
-    cur = {p["nl"]: p for p in players(refresh=True)}
+    cur = {p["nl"]: p for p in players()}
     rows, moved, gone = [], [], 0
     for nl, f in st.items():
         p = cur.get(nl)

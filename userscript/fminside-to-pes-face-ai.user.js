@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Player page → PES Face AI
 // @namespace    https://github.com/FabianZettl/pes-photo-to-face
-// @version      0.6
+// @version      0.7
 // @description  One click on a player page that YOU opened (FMInside, Transfermarkt, SoFIFA): sends name, club, birth date and photo to your local PES Face AI tool.
 // @match        https://fminside.net/players/*
 // @match        https://www.fminside.net/players/*
@@ -167,7 +167,7 @@
         data: JSON.stringify({ ...d, image }), timeout: 60000 });
       if (r.status !== 200) return toast("Tool meldet: " + (JSON.parse(r.responseText).detail || r.status), true);
       const j = JSON.parse(r.responseText), best = j.best[0];
-      if (j.auto) return toast(`Gesicht für ${best.name} berechnet (exakter Treffer: Name und Geburtsdatum). Noch „Mit Build abgleichen“ im Tool.`);
+      if (j.auto) return toast(`Gesicht für ${best.name} berechnet (exakter Treffer: Name und Geburtsdatum) und abgeglichen.`);
       if (d.source === "fminside" && !Object.keys(d.stats).length) note += " Keine Werte gefunden (siehe Konsole).";
       toast((best ? `Gesendet. Bester Treffer: ${best.name} (${Math.round(best.score * 100)} %). Bestätige im Tab "Eingang".` : "Gesendet, aber kein Treffer in der Spielerliste. Wähle im Tool von Hand.") + note, !!note);
     } catch (e) {

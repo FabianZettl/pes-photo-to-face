@@ -280,7 +280,8 @@ def _accept(it, player_id):
                 warn = photo_warnings(t.name)
                 if nwp and not nwp["rendered"]:
                     nw.compute(nwp["nl"], path=t.name)
-                    warn.append("Neue-Welt-Spieler: Gesicht gespeichert, im Tab New World „Mit Build abgleichen“ drücken")
+                    nw.sync()   # at once: the running game picks the face up by itself
+                    warn.append("Neue-Welt-Spieler: Gesicht gebaut und mit dem Build abgeglichen")
                     n = 0
                 else:
                     n = model.queue(player_id, predict_all(t.name))
