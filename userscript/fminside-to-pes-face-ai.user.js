@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Player page → PES Face AI
 // @namespace    https://github.com/FabianZettl/pes-photo-to-face
-// @version      0.7
+// @version      0.8
 // @description  One click on a player page that YOU opened (FMInside, Transfermarkt, SoFIFA): sends name, club, birth date and photo to your local PES Face AI tool.
 // @match        https://fminside.net/players/*
 // @match        https://www.fminside.net/players/*
@@ -22,6 +22,7 @@
 (function () {
   "use strict";
   const SERVER = "http://localhost:8000";
+  const WATCHDOG = window.__PFA_WATCHDOG || 60000;
   const $ = (s, r = document) => r.querySelector(s);
   const text = (el) => (el ? el.textContent.trim() : "");
 
@@ -117,18 +118,21 @@
     return d;
   }
 
-  function toast(msg, bad) {
+  function toast(msg, bad) {   // errors stay until you click them away, everything else fades after 12 s
     let t = $("#pfa-toast");
     if (!t) {
       t = document.createElement("div");
       t.id = "pfa-toast";
-      t.style.cssText = "position:fixed;right:16px;bottom:64px;z-index:99999;max-width:340px;padding:10px 14px;border-radius:10px;font:14px system-ui;color:#fff;box-shadow:0 4px 16px #0005";
+      t.style.cssText = "position:fixed;right:16px;bottom:64px;z-index:99999;max-width:360px;padding:10px 14px;border-radius:10px;font:14px system-ui;color:#fff;box-shadow:0 4px 16px #0005;cursor:pointer";
+      t.title = "Klick schließt";
+      t.onclick = () => t.remove();
       document.body.append(t);
     }
     t.style.background = bad ? "#b91c1c" : "#15803d";
     t.textContent = msg;
+    console.log("[PES Face AI]", bad ? "FEHLER:" : "", msg);
     clearTimeout(t._h);
-    t._h = setTimeout(() => t.remove(), 9000);
+    if (!bad) t._h = setTimeout(() => t.remove(), 12000);
   }
 
   // The list thumbnails are small (SoFIFA 120 px): try the larger variants of the same image first, then the original.
@@ -140,12 +144,13 @@
     return out;
   }
 
-  const gm = (opts) => new Promise((res, rej) => GM_xmlhttpRequest({ ...opts, onload: res, onerror: () => rej(new Error("Netzwerkfehler")), ontimeout: () => rej(new Error("Zeitüberschreitung")) }));
+  const gm = (opts) => new Promise((res, rej) => GM_xmlhttpRequest({ ...opts, onload: res,
+    onerror: () => rej(new Error("Netzwerkfehler")), ontimeout: () => rej(new Error("Zeitüberschreitung")), onabort: () => rej(new Error("abgebrochen")) }));
 
-  async function send() {
+  async function run() {   // -> {msg, kind: ok | warn | bad}
     const d = scrape();
     console.log("[PES Face AI] gefunden:", { ...d, stats: Object.keys(d.stats).length + " Werte" });
-    if (!d.name) return toast("Name nicht gefunden (Seitenlayout geändert?). Siehe Konsole.", true);
+    if (!d.name) return { msg: "Name nicht gefunden (Seitenlayout geändert?). Siehe Konsole.", kind: "bad" };
     if (!d.dob) console.warn("[PES Face AI] kein Geburtsdatum gefunden: der Abgleich läuft nur über Name und Verein");
     try {
       let image = null, note = "";
@@ -165,21 +170,46 @@
       } else note = ' Kein Foto auf der Seite gefunden: bitte im Tool-Tab "Eingang" von Hand ablegen (siehe Konsole).';
       const r = await gm({ method: "POST", url: SERVER + "/api/fm/import", headers: { "Content-Type": "application/json" },
         data: JSON.stringify({ ...d, image }), timeout: 60000 });
-      if (r.status !== 200) return toast("Tool meldet: " + (JSON.parse(r.responseText).detail || r.status), true);
+      if (r.status !== 200) {
+        let why = r.status; try { why = JSON.parse(r.responseText).detail || why; } catch (e) { /* not JSON */ }
+        return { msg: "Tool meldet: " + why, kind: "bad" };
+      }
       const j = JSON.parse(r.responseText), best = j.best[0];
-      if (j.auto) return toast(`Gesicht für ${best.name} berechnet (exakter Treffer: Name und Geburtsdatum) und abgeglichen.`);
+      if (j.auto) return { msg: `Gesicht für ${best.name} berechnet (exakter Treffer: Name und Geburtsdatum) und abgeglichen.`, kind: "ok" };
       if (d.source === "fminside" && !Object.keys(d.stats).length) note += " Keine Werte gefunden (siehe Konsole).";
-      toast((best ? `Gesendet. Bester Treffer: ${best.name} (${Math.round(best.score * 100)} %). Bestätige im Tab "Eingang".` : "Gesendet, aber kein Treffer in der Spielerliste. Wähle im Tool von Hand.") + note, !!note);
+      return { msg: (best ? `Gesendet. Bester Treffer: ${best.name} (${Math.round(best.score * 100)} %). Bestätige im Tab "Eingang".` : "Gesendet, aber kein Treffer in der Spielerliste. Wähle im Tool von Hand.") + note, kind: note ? "warn" : "ok" };
     } catch (e) {
-      toast("Konnte das Tool nicht erreichen (läuft es auf " + SERVER + "?): " + e.message, true);
+      return { msg: "Konnte das Tool nicht erreichen (läuft es auf " + SERVER + "?): " + e.message, kind: "bad" };
     }
+  }
+
+  // Every click ends in a visible result: the button shows the state, a toast says what happened, errors stay on screen.
+  const COLORS = { idle: "#2563eb", busy: "#6b7280", ok: "#15803d", warn: "#b45309", bad: "#b91c1c" };
+  const LABELS = { idle: "→ PES Face AI", busy: "… sendet", ok: "✔ fertig", warn: "⚠ siehe Meldung", bad: "✖ Fehler" };
+  let busy = false;
+  function setBtn(kind) { btn.textContent = LABELS[kind]; btn.style.background = COLORS[kind]; }
+  async function send() {
+    if (busy) return toast("Läuft schon, bitte einen Moment …");
+    busy = true;
+    setBtn("busy");
+    toast("Sende …");
+    const dog = setTimeout(() => { toast("Keine Antwort nach " + Math.round(WATCHDOG / 1000) + " Sekunden. Läuft das Tool, und ist der Server auf " + SERVER + " erreichbar?", true); setBtn("bad"); busy = false; }, WATCHDOG);
+    let res;
+    try { res = await run(); } catch (e) { console.error(e); res = { msg: "Fehler im Skript: " + e.message + " (siehe Konsole)", kind: "bad" }; }
+    clearTimeout(dog);
+    if (!busy) return;   // the watchdog already reported
+    busy = false;
+    toast(res.msg, res.kind === "bad" || res.kind === "warn");
+    setBtn(res.kind);
+    setTimeout(() => setBtn("idle"), 8000);
   }
 
   if (window.__PFA_TEST) { window.__pfaScrape = scrape; return; }
   if (!site()) return;
-  const b = document.createElement("button");
-  b.textContent = "→ PES Face AI";
-  b.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:99999;padding:10px 16px;border:0;border-radius:10px;background:#2563eb;color:#fff;font:600 14px system-ui;cursor:pointer;box-shadow:0 4px 16px #0005";
-  b.onclick = send;
-  document.body.append(b);
+  if (typeof GM_xmlhttpRequest !== "function") { console.error("[PES Face AI] GM_xmlhttpRequest fehlt: das Skript braucht die Tampermonkey-Berechtigung @grant GM_xmlhttpRequest"); }
+  const btn = document.createElement("button");
+  btn.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:99999;padding:10px 16px;border:0;border-radius:10px;color:#fff;font:600 14px system-ui;cursor:pointer;box-shadow:0 4px 16px #0005";
+  setBtn("idle");
+  btn.onclick = send;
+  document.body.append(btn);
 })();

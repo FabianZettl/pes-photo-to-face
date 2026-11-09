@@ -125,7 +125,7 @@ def get(record: bytes, pos: int, width: int, bias: int) -> int:
     return ((bits >> pos) & ((1 << width) - 1)) - bias
 ```
 
-Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `tests/check_stats.py` the stat conversion, `tests/check_fingerprint.py` the build fingerprint (Python vs Lua), `tests/check_commons.py` the licence filter, `tests/check_userscript.py` the page scraper (fixtures).
+Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `tests/check_stats.py` the stat conversion, `tests/check_fingerprint.py` the build fingerprint (Python vs Lua), `tests/check_commons.py` the licence filter, `tests/check_userscript.py` the page scraper (fixtures), `tests/check_userscript_feedback.py` that every click ends in a visible result.
 
 ## Limits (please read)
 
