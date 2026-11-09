@@ -257,7 +257,10 @@ def _cands(name, team, dob):
     if iso and nw.available():
         for p in nw.players():
             if p["born"] == iso and set(model._tokens(name)) & set(model._tokens(p["name"])):
+                a, b = set(model._tokens(name)), set(model._tokens(p["name"]))
                 r = difflib.SequenceMatcher(None, " ".join(model._tokens(name)), " ".join(model._tokens(p["name"]))).ratio()
+                if min(len(a), len(b)) >= 2 and (a <= b or b <= a):   # "Erik Melker Ahlstrand" vs "Erik Ahlstrand": a middle name
+                    r = max(r, 0.9)
                 cands = [c for c in cands if c["id"] != p["id"]]
                 cands.insert(0, {"id": p["id"], "name": p["name"], "teams": [p["club"]], "has_face": True, "score": 1.0,
                                  "exact": r >= 0.9})

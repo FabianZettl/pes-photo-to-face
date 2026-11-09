@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Player page → PES Face AI
 // @namespace    https://github.com/FabianZettl/pes-photo-to-face
-// @version      0.5
+// @version      0.6
 // @description  One click on a player page that YOU opened (FMInside, Transfermarkt, SoFIFA): sends name, club, birth date and photo to your local PES Face AI tool.
 // @match        https://fminside.net/players/*
 // @match        https://www.fminside.net/players/*
@@ -131,6 +131,15 @@
     t._h = setTimeout(() => t.remove(), 9000);
   }
 
+  // The list thumbnails are small (SoFIFA 120 px): try the larger variants of the same image first, then the original.
+  function imageUrls(u) {
+    const out = [];
+    if (/sofifa\.net\/.*_\d+\.png/.test(u)) for (const w of [360, 240, 180]) out.push(u.replace(/_\d+\.png/, `_${w}.png`));
+    if (/transfermarkt[^/]*\/portrait\/(header|medium|small)\//.test(u)) out.push(u.replace(/\/portrait\/(header|medium|small)\//, "/portrait/big/"));
+    out.push(u);
+    return out;
+  }
+
   const gm = (opts) => new Promise((res, rej) => GM_xmlhttpRequest({ ...opts, onload: res, onerror: () => rej(new Error("Netzwerkfehler")), ontimeout: () => rej(new Error("Zeitüberschreitung")) }));
 
   async function send() {
@@ -143,9 +152,13 @@
       if (d.imageUrl) {
         // fetch the photo the way the page itself does (page as referrer); if the image server refuses, the data is
         // sent anyway and the photo can be dropped into the tool by hand
-        const im = await gm({ method: "GET", url: d.imageUrl, responseType: "blob", timeout: 20000,
-          headers: { Referer: location.href, Accept: "image/avif,image/webp,image/*,*/*;q=0.8" } });
-        console.log("[PES Face AI] Bild:", d.imageUrl, "Status", im.status, "Typ", im.response && im.response.type, "Größe", im.response && im.response.size);
+        let im = null;
+        for (const u of imageUrls(d.imageUrl)) {
+          im = await gm({ method: "GET", url: u, responseType: "blob", timeout: 20000,
+            headers: { Referer: location.href, Accept: "image/avif,image/webp,image/*,*/*;q=0.8" } });
+          console.log("[PES Face AI] Bild:", u, "Status", im.status, "Typ", im.response && im.response.type, "Größe", im.response && im.response.size);
+          if (im.status === 200 && im.response && im.response.size >= 500) break;
+        }
         if (im.status === 200 && im.response && im.response.size >= 500) {
           image = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(im.response); });
         } else note = ` Foto-Download abgelehnt (Status ${im.status}): bitte das Foto im Tool-Tab "Eingang" von Hand ablegen.`;

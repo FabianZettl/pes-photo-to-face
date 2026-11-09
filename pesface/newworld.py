@@ -219,10 +219,17 @@ def compute(nl, path=None):
     STORE.write_text(json.dumps(st))
 
 
+def _store_state(st):
+    """What the last Sync has to contain: which faces, for which game ids."""
+    return str(fingerprint(json.dumps(sorted((k, v.get("game_id")) for k, v in st.items())).encode()))
+
+
 def _sync_ok():
+    """True when the last Sync belongs to this build AND already contains every stored face."""
     if not (SIG.exists() and PLAYERIDS.exists()):
         return False
-    return SIG.read_text().split()[-1] == str(fingerprint(PLAYERIDS.read_bytes()))
+    lines = SIG.read_text().split()
+    return len(lines) >= 3 and lines[1] == str(fingerprint(PLAYERIDS.read_bytes())) and lines[2] == _store_state(_store())
 
 
 def sync():
@@ -247,6 +254,6 @@ def sync():
     with open(OUT, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, cols, restval="", extrasaction="ignore", lineterminator="\r\n")
         w.writeheader(); w.writerows(rows)
-    SIG.write_text(f"{PLAYERIDS.relative_to(SIDER).as_posix()}\n{fingerprint(PLAYERIDS.read_bytes())}\n")
     STORE.write_text(json.dumps(st))
+    SIG.write_text(f"{PLAYERIDS.relative_to(SIDER).as_posix()}\n{fingerprint(PLAYERIDS.read_bytes())}\n{_store_state(st)}\n")
     return {"written": len(rows), "moved": moved, "gone": gone}
