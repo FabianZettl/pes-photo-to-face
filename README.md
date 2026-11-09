@@ -1,28 +1,84 @@
 # PES Photo → Face
 
-Turn a **photo** into the **Edit-mode face settings** of a PES player (eFootball PES 2021 SEASON UPDATE engine, used by
-Football Life / patch setups): skin tone, eyes, brows, nose, mouth, chin, ears, beard, and the hair menu
-(style, length, curl, parting, colour …). The values go into a CSV; a small Sider module
-applies them to the players in game. Works for single players or a whole folder of photos named after player IDs.
+Builds **faces for the new players of an [FL Mod Studio](https://github.com/Matozanato/FootballLife-new-leagues) world** (Football
+Life 2026/2027, PES 2021 engine) from **photos**, and applies them **live in the running game**. It turns a photo into the
+Edit-mode appearance of a player (skin tone, eyes, brows, nose, mouth, chin, ears, beard, hair style, length, curl, colour …),
+stores it, and a small Sider module writes it into the game's appearance table within seconds. No restart per face.
 
-It is an estimate, not magic. The result is a good starting point that you fine-tune in the editor.
+> **Status.** Working in the author's Football Life 2027 setup: a face built in the tool showed up in the running game right
+> away. The estimates are good starting points, not perfect likenesses (see [Limits](#limits-please-read)). The record layout
+> and the way the module gets past `fl26regen`'s pack faces are documented so that other tools can reuse them.
 
-> **Status: experimental.** Everything described here was checked in a Football Life 2027 setup. Offsets and
-> field layouts are for that build; see [docs/how-it-works.md](docs/how-it-works.md) for what is verified and what is not.
+## What it does with FL Mod Studio
 
-## What is in the box
+FL Mod Studio builds worlds with new leagues, clubs and players. Those new players have no face of their own: `fl26regen` gives
+each of them a **pack face** by nationality. This tool replaces the pack face of the players you choose with a face made from a photo.
 
-| Part | What it does |
-|---|---|
-| `pesface/` + `web/` | Python tool with a web UI: photo → values → CSV queue. Tabs: *Erkennen* (recognise), *Training*, *Haare* (hand-label hair), *Bulk* (folder of photos). |
-| `sider/faceai.lua` | Sider module: reads the CSV, writes the values into the game's appearance table, inserts records for players that have none (new-world players). |
-| `sider/faceai_probe.lua` | Read-only helper: dumps the appearance table (F8) – this is how the record layout was reverse-engineered, and how you check your own build. |
-| `userscript/` + `pesface/stats.py` + `sider/faceai_stats.lua` | Optional FMInside hand-off: one click on a player page *you opened* sends name, club, stats and photo to the local tool; stats are converted to PES values and written by `faceai_stats.lua`. |
-| `data/layout.json`, [docs/appearance-record.md](docs/appearance-record.md) | The 72-byte appearance record: which bits hold which setting. **This is the part other tools can reuse.** |
+```
+FL Mod Studio build ──► fl26playerids.json   who the new players are (game id, name, club, birth date, NewLife id)
+(read only)             fl26world.txt        which of them have the generic pack face
+                        NewLife release zips ratings, club names
 
-## Quick start
+photo ──► this tool ──► face values per player, stored under the NewLife id
+                         │  "Mit Build abgleichen" (automatic after a build)
+                         ▼
+                  faceai_newworld.csv + fingerprint of the build ──► faceai.lua (Sider module) ──► game appearance table
+```
 
-Needs Python 3.11 (DeepFace/TensorFlow) and a Football Life / PES 2021 Sider setup.
+- **Reads, never changes, Mod Studio's files.** `fl26playerids.json`, `fl26world.txt` and the NewLife zips are only read.
+- **Stable across builds.** Mod Studio hands out the game id of a new player at Build ("first free id"), and it can change. Faces
+  are stored under the NewLife id; every Sync writes the *current* game ids plus a fingerprint of that build's
+  `fl26playerids.json`. The module uses the rows only while the fingerprint matches, so a face can never land on the wrong
+  player after a rebuild (it logs that a new Sync is needed instead).
+- **Live, next to `fl26regen`.** `fl26regen.dll` copies its pack face over the appearance record of every player in its
+  new-player list every 250 ms, also over a record we wrote. `faceai.lua` finds that list in the DLL's data, sets the pack-face
+  index of the players it manages to -1 (the DLL then leaves them alone) and redirects their portrait itself. It does this right
+  before it writes a record and again whenever the DLL rebuilds its list. Details: [docs/how-it-works.md](docs/how-it-works.md).
+- **Rendered faces are respected.** Players that already have a rendered face model in a face pack
+  (`livecpk/*/Asset/model/character/face/real/<id>/`) are detected and need nothing.
+- **Needs room in the appearance table**, which FL Mod Studio's `fl26appcap` module provides (65,000 records).
+
+## Daily use
+
+Open the tool (`python -m pesface serve`, http://localhost:8000). It opens on **New World**:
+
+1. **Pick a team** (or search). The list shows every new player of the last build with club, birth date and strength, and who
+   still needs a face.
+2. **Get a photo** (see [Photo sources](#photo-sources)).
+3. **Build:** **Berechnen** builds one player from his photo, **Alle mit Foto berechnen** every player that has one, **Team bauen** fetches the free Commons portraits of one team,
+   builds the faces and syncs. A face built from the browser hand-off is synced at once.
+4. **In game:** within a few seconds the module writes the record; the 3D model shows the new face when the game loads the player
+   again (match, Edit). The 2D portrait in lists stays the pack portrait.
+5. **Not happy with a face?** **Neu berechnen** rebuilds it from the stored photo; **Zurücksetzen** removes face, photo and credit
+   so the player needs a build again (a running game keeps the face until the next start).
+
+Normal mode shows only New World (plus *Eingang* while a page you sent from the browser waits for your confirmation). The other
+tools (*Erkennen*, *Bulk*, *Training*, *Haare*) sit behind the **Dev** switch at the top right.
+
+## Photo sources
+
+The tool never crawls a site. Photos come only like this:
+
+- **Wikimedia Commons, on request.** **Commons-Foto** on a row looks the player up on Wikidata (same birth date, similar name),
+  shows the portrait with author and licence, and downloads it only when you press *Übernehmen*. **Team prüfen** / **Sichtbare auf
+  Commons prüfen** ask metadata only. Only CC0, public domain, CC BY and CC BY-SA files of at least 400 px are offered; author,
+  licence and source are kept with the photo (`newworld_photos/credits.json`). On a sample of 600 players about 17 % of the new
+  players had a free Commons photo (roughly 40 % of the strongest 1,000, 10 % of the weakest). Requests are throttled to one per
+  second.
+- **Browser hand-off for pages you open yourself** (FMInside, Transfermarkt, SoFIFA; `userscript/`). One click on a player page
+  sends name, club, birth date and photo to your local tool. The tool matches the player; an exact match (equal birth date,
+  nearly equal name) is built immediately, anything less certain waits in *Eingang* for your confirmation. **The photo is used
+  once and dropped: it is never stored, shared or used for training.** Every click ends in a visible result (button state,
+  toast). The selectors are best guesses (the sites block automated access); see the limits.
+- **Photos you drop in** (on a row, or a folder of `<playerID>.jpg` via the Dev *Bulk* tab).
+- Photos should be front-facing, hair visible, ideally ≥ 800 px; the tool warns about small ones.
+
+Respect each site's terms. FMInside reserves its content against AI training and kicker blocks AI crawlers, so neither is a
+source for training data. SoFIFA's player images are EA's game renders, Transfermarkt's are agency photos.
+
+## Install
+
+Needs Python 3.11 (DeepFace/TensorFlow) and a Football Life / PES 2021 Sider setup with FL Mod Studio's modules.
 
 ```bash
 python3.11 -m venv .venv && . .venv/bin/activate
@@ -31,93 +87,31 @@ python -m pesface fetch-base-data          # base training data of the original 
 python -m pesface train                    # trains the face model (seconds)
 
 export FACEAI_DIR="/path/to/SiderAddons/content/faceai"   # shared with the Sider module
+export NEWLIFE_DIR="/path/to/NewLife-release-zips"        # optional: ratings and club names
 python -m pesface serve                    # http://localhost:8000
 ```
 
 **Game side**
 1. Copy `sider/faceai.lua` (and, if you want to analyse dumps, `sider/faceai_probe.lua`) to `SiderAddons/modules/`.
 2. Create the folder `SiderAddons/content/faceai/`.
-3. Add `lua.module = "faceai.lua"` to `sider.ini`. If you use the `fl26regen` module, list `faceai.lua` **before** it
-   (see [docs/how-it-works.md](docs/how-it-works.md#new-world-players)).
-4. In game open the Sider overlay (the key set by `overlay.vkey.toggle` in `sider.ini`), select the `faceai` module, **F9** applies the queue.
+3. Add `lua.module = "faceai.lua"` to `sider.ini` (it needs `luajit.ext.enabled = 1` for safe memory reads; without it only F9 works). It runs by itself every
+   few seconds after that; **F9** in the Sider overlay (module `faceai` selected) applies at once.
+4. Optional player search by name/team: build the list from your own game data with
+   `python -m pesface players players_dump.bin dump_XXXX.bin <folder with Team.bin and PlayerAssignment.bin>`.
 
-**Using it**
-- *Erkennen*: drop a photo, optionally pick hair options, **In Queue**.
-- *Bulk*: type the folder path (files named `<playerID>.jpg`), **Alle verarbeiten**. Same from the command line:
-  `python -m pesface queue /path/to/folder`.
-- In game press **F9**: every player in the queue is written, then removed from `faceai.csv` and copied to
-  `faceai_done.csv`.
-- Photos: front-facing, hair visible, at least ~800 px. Tiny photos give poor results (the UI warns you).
+## Quality and training
 
-**Optional: player search by name/team.** Build the list from your own game data:
-`PlayerDump` (F7 of the Karijera 26 module) writes `players_dump.bin`; then
-`python -m pesface players players_dump.bin dump_XXXX.bin <folder with Team.bin and PlayerAssignment.bin>`.
-Without it you can still type player IDs.
-
-## Using the tool
-
-The tool opens on **New World**, which is all you need to build faces. The *Eingang* tab shows up with a badge while a page you
-sent from the browser waits for your confirmation. Everything else (*Erkennen*, *Bulk*, *Training*, *Haare*) sits behind the **Dev**
-switch at the top right, which is remembered in the browser. A built face can be redone (**Neu berechnen**, from the stored photo)
-or undone (**Zurücksetzen**: face and photo are removed and the player needs a build again; a running game keeps the face until the
-next start).
-
-## New World players (Football Life / FL Mod Studio)
-
-If you build worlds with [FL Mod Studio](https://github.com/Matozanato/FootballLife-new-leagues) (MIT), the *New World* tab lists
-every new player of the last build (from `fl26playerids.json`: name, club, birth date, NewLife id; ratings from your NewLife
-release zips) and marks who still has the generic pack face. Players that already have a rendered face model in a face pack
-(`livecpk/*/Asset/model/character/face/real/<id>/`) are detected and need nothing.
-
-1. Give a player a photo (drop it on his row, or use the FM hand-off, where the birth date makes the match exact).
-2. **Alle mit Foto berechnen** computes the faces. They are stored under the **NewLife id**, because Mod Studio hands out the
-   game id at Build and it can change.
-3. **Mit Build abgleichen** writes `faceai_newworld.csv` with the current game ids plus a fingerprint of that build's
-   `fl26playerids.json`. `faceai.lua` uses the rows only while the fingerprint still matches, so a face can never land on the
-   wrong player after a rebuild; if the build changed it logs that a new Sync is needed.
-
-**Photos from Wikimedia Commons, on request only.** On a row without a photo, **Commons-Foto** looks the player up on Wikidata
-(same birth date, similar name) and shows the portrait Commons has for him, with author and licence. Only after you press
-*Übernehmen* is that one image downloaded; author, licence and source are kept next to it (`newworld_photos/credits.json`) and
-shown in the list. Only CC0, public domain, CC BY and CC BY-SA files of at least 400 px are offered. **Sichtbare auf Commons
-prüfen** asks metadata only (no images) and marks the rows that have a free photo. A count on a sample of 600 players put the
-share with a free Commons photo at roughly 40 % of the strongest 1,000 and roughly 10 % of the weakest, about 17 % overall.
-Requests are throttled to one per second and carry a descriptive User-Agent.
-
-Paths: `FACEAI_DIR` = `<SiderAddons>/content/faceai` (the tool derives `SiderAddons` from it; override with `SIDER_DIR`),
-`NEWLIFE_DIR` = the folder with the NewLife zips (default `~/Downloads/NewLife*`).
-
-## Player-page hand-off (FMInside, Transfermarkt, SoFIFA; optional)
-
-For players whose photo you want from one of these sites:
-
-1. Install `userscript/fminside-to-pes-face-ai.user.js` in Tampermonkey/Violentmonkey.
-2. Open a player page on the site yourself (the *New World* rows have search links) and click **→ PES Face AI**. Nothing is
-   crawled or searched: the script reads the one page you are on (name, club, birth date, photo; FMInside also the FM
-   attributes) and hands it to your local server (`localhost:8000`).
-3. The tool matches the player against your list. For new-world players an **exact match (equal birth date, nearly equal
-   name)** is built immediately (switch in the *Eingang* tab); anything less certain waits in the *Eingang* tab for your
-   confirmation. The photo is used once and dropped: **it is never stored, shared or used for training**.
-4. New-world faces then need **Mit Build abgleichen** (or *Team bauen*) in the *New World* tab. For FMInside, stats are converted
-   (`pesface/stats.py`) into `faceai_stats.csv`; in game press **F7** in PlayerDump once per launch, then **F5** in
-   `faceai_stats.lua`.
-
-The selectors are best guesses (the sites block automated access, so they could only be tested against small fixtures:
-`tests/check_userscript.py`); if a page is not understood the toast says what was missing and the console shows what the script
-saw. Some image servers refuse the photo download; the data still arrives and you drop the photo into the *Eingang* by hand.
-Respect each site's terms. FMInside reserves its content against AI training and kicker blocks AI crawlers, so neither is a
-source for the training folders; SoFIFA's player images are EA's game renders, Transfermarkt's are agency photos.
-
-## Training
-
-- **Face:** the base model uses ~1,000 players from the original project. In the *Training* tab you add photos of
-  players together with their current in-game values (read from a dump) and retrain.
-- **Hair:** the *Haare* tab lets you label a photo yourself ("this is how I would build it in game"). Rules plus a
-  zero-shot CLIP step guess the hair; once about 40 labelled photos exist a small classifier takes over.
+Face sliders: a ridge regression on FaceNet embeddings (about 1,000 players from the original project as base data; cross-validated
+about 20 % better than predicting the average; skin tone, nose and brows work, head/ear proportions hardly). Hair: rules on a MediaPipe
+hair mask plus a zero-shot CLIP step for braids, locks, afro and mohawk; colour is snapped to the game's seven presets; beard is a
+CLIP decision (none / stubble / full). With about 40 labelled photos a classifier takes over the hair options. In the Dev tabs you add
+training photos with their in-game values (*Training*) or label hair yourself (*Haare*) and retrain.
 
 ## Use the layout in your own tool
 
-[docs/appearance-record.md](docs/appearance-record.md) lists every field. Reading one slider is:
+[docs/appearance-record.md](docs/appearance-record.md) lists every field of the 72-byte appearance record with its evidence, and
+[docs/how-it-works.md](docs/how-it-works.md) explains how it was found (dump the table, change one option in Edit, diff). Reading one
+slider is:
 
 ```python
 def get(record: bytes, pos: int, width: int, bias: int) -> int:
@@ -125,42 +119,43 @@ def get(record: bytes, pos: int, width: int, bias: int) -> int:
     return ((bits >> pos) & ((1 << width) - 1)) - bias
 ```
 
-Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `tests/check_stats.py` the stat conversion, `tests/check_fingerprint.py` the build fingerprint (Python vs Lua), `tests/check_commons.py` the licence filter, `tests/check_userscript.py` the page scraper (fixtures), `tests/check_userscript_feedback.py` that every click ends in a visible result, `tests/check_release.py` the live take-over from `fl26regen` (fake process).
+Tests: `tests/check_layout.py` (no overlapping fields), `check_stats.py` (stat conversion), `check_fingerprint.py` (build fingerprint,
+Python vs Lua), `check_commons.py` (licence filter), `check_userscript.py` and `check_userscript_feedback.py` (page scraper and the
+click feedback, against fixtures), `check_release.py` (the live take-over from `fl26regen`, against a fake process).
 
 ## Limits (please read)
 
-- Letting `faceai.lua` take players over from `fl26regen`'s pack faces live (no restart) is built from that DLL's source and tested against a
-  fake process only; the first run in a real game shows in `sider.log` (`fl26regen's list found …`, `… taken over …`).
-
-- Verified only on the Football Life 2027 build (`FL_2027.exe`). Other builds may use other offsets.
-- The in-memory table is verified. The on-disk `PlayerAppearance.bin` container (zlib) is *not* verified to use the same
-  record layout.
-- A few fields are loose guesses (head length/width/depth, upper eyelid type, laughter lines) and some menu values are
-  inferred from menu order. [The record doc](docs/appearance-record.md) marks every field with its evidence.
-- Written values live in memory. I have not verified that they survive saving the Edit data and restarting; for
-  players without a record the module re-inserts them from `faceai_done.csv` at every start.
-- Beard types and hair colour are heuristics. Colour is snapped to the game's seven presets.
+- Confirmed live in a real game for a built player; broad testing across many players and screens is still to be done. Whether a
+  face appears also depends on the screen: the 3D model uses the record, the 2D portrait in lists stays the pack portrait.
+- The take-over from `fl26regen` is built from that DLL's source (list layout: u32 id, i16 face, u8 keep, u8 pad). A different
+  `fl26regen` version could differ; `sider.log` then says `could not find fl26regen's list` and the pack face may overwrite ours.
+- Verified only on the Football Life 2027 build (`FL_2027.exe`). The in-memory table is verified; the on-disk `PlayerAppearance.bin`
+  container is *not* verified to use the same record layout.
+- A few fields are loose guesses (head length/width/depth, upper eyelid type, laughter lines) and some menu values are inferred from menu
+  order; [the record doc](docs/appearance-record.md) marks every field with its evidence.
+- Hair and beard are heuristics. Small photos (SoFIFA thumbnails are 120 px) give weak results.
+- The user script's selectors for Transfermarkt and SoFIFA could only be tested against fixtures and, for SoFIFA, a few real pages.
+- `faceai_stats.lua` (Football Manager attributes → PES stats, via the FMInside hand-off) is experimental and not verified in game.
 
 ## Credits
 
-- **AlirezaF80** – [PES-Edit-Face-AI](https://github.com/AlirezaF80/PES-Edit-Face-AI): the original idea (face embedding →
-  slider values) and the base training data, which this tool downloads from there (`fetch-base-data`) and does **not**
-  redistribute, because that repository has no licence. This is a from-scratch rewrite of the idea.
+- **[FL Mod Studio](https://github.com/Matozanato/FootballLife-new-leagues) (Matozanato, MIT)** – the worlds and NewLife releases
+  this tool works on. Its documentation and the source of `fl26regen`, `fl26appcap` and the world file were the reference for how new
+  players get their faces; this tool only reads its output.
+- **AlirezaF80** – [PES-Edit-Face-AI](https://github.com/AlirezaF80/PES-Edit-Face-AI): the original idea (face embedding → slider values)
+  and the base training data, which this tool downloads from there (`fetch-base-data`) and does **not** redistribute, because that
+  repository has no licence. This is a from-scratch rewrite of the idea.
 - **juce** – Sider (PES Sider, announced on the evo-web forum), which makes in-game Lua modules possible.
-- The **Football Life 26/27 module set** (`fl26appcap`, `fl26regen`, FL26 Mod Studio) – their comments documented the
-  appearance table size and how new-world players get faces; `faceai.lua` is written to coexist with them.
-- **FL Mod Studio** (Matozanato, MIT) – the world files and NewLife releases the *New World* tab reads; its documentation of the world file and of the `fl26` modules was the reference for how new players get their faces.
-- **Karijera 26** – `PlayerDump` (optional source of the player list) and `GrowthBridge`, whose documented player-block layout (7-bit attribute fields) `faceai_stats.lua` uses. Not included.
+- **Karijera 26** – `PlayerDump` (optional source of the player list) and `GrowthBridge`, whose documented player-block layout
+  (7-bit attribute fields) `faceai_stats.lua` uses. Not included.
 - **Wikimedia Commons / Wikidata** – portraits offered on request, with the photographers' attribution kept.
-- **DeepFace** (Sefik Ilkin Serengil) and **FaceNet** – face embeddings.
-- **MediaPipe** (Google, Apache-2.0) – hair segmentation model, downloaded on first use.
-- **OpenAI CLIP** via Hugging Face Transformers – zero-shot hairstyle step.
-- scikit-learn, PyTorch, OpenCV, FastAPI.
+- **DeepFace** (Sefik Ilkin Serengil) and **FaceNet** – face embeddings. **MediaPipe** (Google, Apache-2.0) – hair segmentation, downloaded
+  on first use. **OpenAI CLIP** via Hugging Face Transformers – zero-shot hair and beard step. scikit-learn, PyTorch, OpenCV, FastAPI.
 
 ## Legal
 
-Unofficial fan tool, not affiliated with Konami or any mod team. No game files, player data, photos or trained models
-are included. You need your own copy of the game. Make sure you may use the photos you feed in.
+Unofficial fan tool, not affiliated with Konami or any mod team. No game files, player data, photos or trained models are included.
+You need your own copy of the game. Make sure you may use the photos you feed in.
 
 ## License
 
