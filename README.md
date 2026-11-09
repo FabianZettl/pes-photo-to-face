@@ -54,6 +54,14 @@ python -m pesface serve                    # http://localhost:8000
 `python -m pesface players players_dump.bin dump_XXXX.bin <folder with Team.bin and PlayerAssignment.bin>`.
 Without it you can still type player IDs.
 
+## Using the tool
+
+The tool opens on **New World**, which is all you need to build faces. The *Eingang* tab shows up with a badge while a page you
+sent from the browser waits for your confirmation. Everything else (*Erkennen*, *Bulk*, *Training*, *Haare*) sits behind the **Dev**
+switch at the top right, which is remembered in the browser. A built face can be redone (**Neu berechnen**, from the stored photo)
+or undone (**Zurücksetzen**: face and photo are removed and the player needs a build again; a running game keeps the face until the
+next start).
+
 ## New World players (Football Life / FL Mod Studio)
 
 If you build worlds with [FL Mod Studio](https://github.com/Matozanato/FootballLife-new-leagues) (MIT), the *New World* tab lists

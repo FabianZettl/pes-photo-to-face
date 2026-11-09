@@ -171,7 +171,7 @@ def listing(q="", state="", limit=200, club=""):
             continue
         hay = _fold(f'{p["name"]} {p["club"]} {p["born"]}')
         if all(w in hay for w in q):
-            rows.append({**p, "state": s, "credit": _credit(p["nl"])})
+            rows.append({**p, "state": s, "credit": _credit(p["nl"]), "has_photo": has_photo})
     rows.sort(key=lambda r: -(r["overall"] or 0))
     return rows[:limit], len(rows)
 
@@ -257,3 +257,41 @@ def sync():
     STORE.write_text(json.dumps(st))
     SIG.write_text(f"{PLAYERIDS.relative_to(SIDER).as_posix()}\n{fingerprint(PLAYERIDS.read_bytes())}\n{_store_state(st)}\n")
     return {"written": len(rows), "moved": moved, "gone": gone}
+
+
+def _drop_rows(path, ids):
+    """Remove the rows with these game ids from one of our CSV files (header kept). Returns how many were removed."""
+    if not path.exists():
+        return 0
+    with open(path, newline="", encoding="utf-8") as fh:
+        rd = csv.DictReader(fh)
+        head, rows = rd.fieldnames, list(rd)
+    keep = [r for r in rows if str(r.get("Id")) not in ids]
+    if len(keep) != len(rows):
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, head, restval="", lineterminator="\r\n")
+            w.writeheader(); w.writerows(keep)
+    return len(rows) - len(keep)
+
+
+def reset(nl, keep_photo=False):
+    """Take a player back to 'needs a face': his stored face, (optionally) his photo and credit, and any row of his in the
+    plain queue / done files. Then Sync, so faceai_newworld.csv no longer has him. A running game keeps the face it
+    already got until the next start."""
+    p = next((p for p in players() if p["nl"] == nl), None)
+    if not p:
+        raise ValueError("Spieler nicht gefunden")
+    st = _store()
+    old = st.pop(nl, None)
+    STORE.write_text(json.dumps(st))
+    ids = {str(p["id"])} | ({str(old["game_id"])} if old and old.get("game_id") else set())
+    removed = _drop_rows(FACEAI_DIR / "faceai.csv", ids) + _drop_rows(FACEAI_DIR / "faceai_done.csv", ids)
+    if not keep_photo:
+        for f in PHOTOS.glob(f"{nl}.*") if PHOTOS.exists() else []:
+            f.unlink()
+        cf = PHOTOS / "credits.json"
+        if cf.exists():
+            c = json.loads(cf.read_text())
+            if c.pop(nl, None) is not None:
+                cf.write_text(json.dumps(c, ensure_ascii=False))
+    return {"had_face": old is not None, "rows_removed": removed, **sync()}

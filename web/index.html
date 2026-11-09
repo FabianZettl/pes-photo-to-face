@@ -9,6 +9,8 @@ header{grid-column:1/-1;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
 h1{margin:0;font-size:22px;letter-spacing:-.02em;margin-right:auto}h1 span{color:var(--mut);font-weight:400}
 .tabs{display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px}
 .tabs button{background:none;color:var(--mut);padding:7px 16px}.tabs button.on{background:var(--acc);color:#fff}
+#devtoggle.on{background:var(--acc)!important;color:#fff!important;border-color:var(--acc)!important}
+.tabs button b{background:var(--bad);color:#fff;border-radius:9px;padding:0 6px;margin-left:6px;font-size:11px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
 .col{display:grid;gap:20px;min-width:0}
 #out{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
@@ -33,7 +35,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
 <main>
 <header>
   <h1>PES Face AI <span>Foto ↔ Face-Werte</span></h1>
-  <div class="tabs"><button id="t1" class="on">Erkennen</button><button id="t6">New World</button><button id="t5">Eingang</button><button id="t4">Bulk</button><button id="t2">Training</button><button id="t3">Haare</button></div>
+  <div class="tabs"><button id="t6" class="on">New World</button><button id="t5" class="dev" hidden>Eingang</button><button id="t1" class="dev" hidden>Erkennen</button><button id="t4" class="dev" hidden>Bulk</button><button id="t2" class="dev" hidden>Training</button><button id="t3" class="dev" hidden>Haare</button></div><button id="devtoggle" title="Entwickler-Ansicht: alle Werkzeuge" style="background:none;border:1px solid var(--line);color:var(--mut);padding:6px 12px">Dev</button>
 </header>
 
 <div class="col">
@@ -308,7 +310,7 @@ async function nwLoad(){
   for(const p of j.rows){
     const row=document.createElement('div');row.className='hit';row.style.cssText='display:grid;grid-template-columns:56px 1fr auto;gap:10px;align-items:center;cursor:default;border-bottom:1px solid var(--line);border-radius:0';
     let thumb;
-    if(p.state==='photo'||p.state==='done'){thumb=document.createElement('img');thumb.src='/api/newworld/photo/'+p.nl+'?'+Date.now();thumb.style.cssText='width:56px;height:70px;object-fit:cover;border-radius:6px'}
+    if((p.state==='photo'||p.state==='done')&&p.has_photo){thumb=document.createElement('img');thumb.src='/api/newworld/photo/'+p.nl+'?'+Date.now();thumb.style.cssText='width:56px;height:70px;object-fit:cover;border-radius:6px'}
     else{thumb=document.createElement('div');thumb.className='drop';thumb.style.cssText='width:56px;height:70px;aspect-ratio:auto;font-size:10px;padding:2px';thumb.textContent=p.state==='rendered'?'✔':'Foto';
       if(p.state!=='rendered'){const fi=document.createElement('input');fi.type='file';fi.accept='image/*';fi.hidden=true;
         const up=async f=>{if(!f)return;const d=new FormData();d.append('nl',p.nl);d.append('photo',f);const r=await fetch('/api/newworld/photo',{method:'POST',body:d});if(r.ok)nwLoad();else say('nwmsg',(await r.json()).detail,1)};
@@ -334,6 +336,14 @@ async function nwLoad(){
         ok.onclick=async()=>{ok.disabled=true;const d=new FormData();d.append('nl',p.nl);const r=await fetch('/api/newworld/commons/fetch',{method:'POST',body:d});if(r.ok)nwLoad();else{say('nwmsg',(await r.json()).detail,1);ok.disabled=false}};
         const no=document.createElement('button');no.textContent='Nein';no.style.cssText='background:var(--line);color:var(--fg)';no.onclick=()=>box.remove();
         const col=document.createElement('div');col.append(t,ok,document.createTextNode(' '),no);box.append(im,col);row.after(box)};side.append(b)}
+    if(p.state==='done'){
+      if(p.has_photo){const b=document.createElement('button');b.textContent='Neu berechnen';b.style.cssText='margin-top:4px;background:var(--line);color:var(--fg)';
+        b.onclick=async()=>{b.disabled=true;const d=new FormData();d.append('nl',p.nl);const r=await fetch('/api/newworld/compute',{method:'POST',body:d}),j=await r.json();
+          say('nwmsg',r.ok?`${p.name}: Gesicht neu berechnet und abgeglichen`:(j.detail||'Fehler'),!r.ok);nwLoad()};side.append(b)}
+      const rb=document.createElement('button');rb.textContent='Zurücksetzen';rb.style.cssText='margin:4px 0 0 4px;background:var(--line);color:var(--fg)';
+      rb.onclick=()=>{if(rb.dataset.sure!=='1'){rb.dataset.sure='1';rb.textContent='Wirklich? Gesicht und Foto löschen';rb.style.background='var(--bad)';rb.style.color='#fff';setTimeout(()=>{rb.dataset.sure='';rb.textContent='Zurücksetzen';rb.style.background='var(--line)';rb.style.color='var(--fg)'},4000);return}
+        const d=new FormData();d.append('nl',p.nl);fetch('/api/newworld/reset',{method:'POST',body:d}).then(async r=>{const j=await r.json();
+          say('nwmsg',r.ok?`${p.name} zurückgesetzt. Im laufenden Spiel bleibt das Gesicht bis zum nächsten Start.`:(j.detail||'Fehler'),!r.ok);nwLoad()})};side.append(rb)}
     if(p.state==='photo'){const b=document.createElement('button');b.textContent='Berechnen';b.style.marginTop='4px';
       b.onclick=async()=>{b.disabled=true;const d=new FormData();d.append('nl',p.nl);const r=await fetch('/api/newworld/compute',{method:'POST',body:d});if(!r.ok){say('nwmsg',(await r.json()).detail,1);b.disabled=false;return}nwProgress()};side.append(b)}
     row.append(thumb,mid,side);out.append(row)}
@@ -369,4 +379,16 @@ async function teamPoll(){clearTimeout(teampoll);const j=await (await fetch('/ap
 $('nwteambuild').onclick=async()=>{const d=new FormData();d.append('club',$('nwclub').value);
   const r=await fetch('/api/newworld/team/build',{method:'POST',body:d});if(!r.ok){say('nwmsg',(await r.json()).detail,1);return}teamPoll()};
 $('nwq').oninput=()=>{clearTimeout(nwtimer);nwtimer=setTimeout(nwLoad,250)};$('nwstate').onchange=nwLoad;
+
+// ---- normal mode: New World only (plus Eingang while something waits there); Dev shows every tool
+let pending=0;
+const isDev=()=>{try{return localStorage.getItem('pfaDev')==='1'}catch(e){return false}};
+function applyMode(){
+  const dev=isDev();$('devtoggle').className=dev?'on':'';
+  for(const id of ['t1','t2','t3','t4'])$(id).hidden=!dev;
+  $('t5').hidden=!(dev||pending>0);$('t5').innerHTML='Eingang'+(pending?` <b>${pending}</b>`:'');
+  const hiddenTab={1:'t1',2:'t2',3:'t3',4:'t4',5:'t5'}[tab];if(hiddenTab&&$(hiddenTab).hidden){setTab(6);nwLoad()}}
+$('devtoggle').onclick=()=>{try{localStorage.setItem('pfaDev',isDev()?'0':'1')}catch(e){}applyMode()};
+async function pollInbox(){try{const j=await (await fetch('/api/fm/inbox')).json();pending=j.length}catch(e){}applyMode();setTimeout(pollInbox,4000)}
+setTab(6);nwLoad();applyMode();pollInbox();
 </script>

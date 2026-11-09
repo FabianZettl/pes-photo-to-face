@@ -446,12 +446,28 @@ def nw_compute(nl: str = Form("")):
     if NWP["running"]:
         raise HTTPException(409, "Es läuft schon eine Berechnung")
     st = nw._store()
+    if nl and nl in st and nw.photo_file(nl):   # rebuild from the stored photo and replace the old face at once
+        try:
+            nw.compute(nl)
+            return {"total": 1, "replaced": True, **nw.sync()}
+        except Exception as e:
+            raise HTTPException(422, str(e))
     todo = [nl] if nl else [p["nl"] for p in nw.players() if not p["rendered"] and nw.photo_file(p["nl"]) and p["nl"] not in st]
     if not todo:
         raise HTTPException(422, "Nichts zu berechnen: kein Spieler mit Foto ohne Gesicht")
     NWP.update(running=True, total=len(todo), done=0, errors=[])
     threading.Thread(target=_nw_run, args=(todo,), daemon=True).start()
     return {"total": len(todo)}
+
+
+@app.post("/api/newworld/reset")
+def nw_reset(nl: str = Form(...), keep_photo: str = Form("0")):
+    """Undo a built face (unhappy with the photo): face and photo are removed, the player needs a build again."""
+    _nw_need()
+    try:
+        return nw.reset(nl, keep_photo == "1")
+    except ValueError as e:
+        raise HTTPException(404, str(e))
 
 
 @app.get("/api/newworld/progress")
