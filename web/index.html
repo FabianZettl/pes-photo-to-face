@@ -124,7 +124,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
     <div class="hint" id="nwsum" style="margin:0 0 8px"></div>
     <input id="nwq" placeholder="Name, Verein oder Geburtsdatum" style="width:100%">
     <select id="nwstate" style="margin-top:6px"><option value="">Alle (ohne gerenderte Gesichter)</option><option value="nophoto">Kein Foto</option><option value="photo">Foto da, noch nicht berechnet</option><option value="done">Gesicht berechnet</option><option value="rendered">Hat gerendertes Gesicht</option></select>
-    <div class="row"><button id="nwall">Alle mit Foto berechnen</button><button id="nwsync">Mit Build abgleichen</button><button id="nwref" style="background:var(--line);color:var(--fg)">Neu einlesen</button></div>
+    <div class="row"><button id="nwall">Alle mit Foto berechnen</button><button id="nwsync">Mit Build abgleichen</button><button id="nwcheck" style="background:var(--line);color:var(--fg)">Sichtbare auf Commons prüfen</button><button id="nwref" style="background:var(--line);color:var(--fg)">Neu einlesen</button></div>
     <div class="bar" style="margin-top:12px"><i id="nwbar" style="left:0;width:0"></i></div>
     <div class="msg" id="nwmsg"></div>
   </div>
@@ -280,6 +280,7 @@ async function fmLoad(){
   fmpoll=setTimeout(fmLoad,2500)}
 
 // ---- tab 6: New World
+const NWC={};
 const STATE={nophoto:'kein Foto',photo:'Foto da',done:'Gesicht berechnet',rendered:'gerendertes Gesicht'};
 async function nwLoad(){
   if(tab!=6)return;
@@ -300,8 +301,22 @@ async function nwLoad(){
         thumb.onclick=()=>fi.click();fi.onchange=e=>up(e.target.files[0]);thumb.ondragover=e=>e.preventDefault();thumb.ondrop=e=>{e.preventDefault();up(e.dataTransfer.files[0])};thumb.append(fi)}}
     const mid=document.createElement('div');mid.innerHTML='<b></b><div class="hint"></div>';mid.firstChild.textContent=p.name;
     mid.lastChild.textContent=`${p.club} · ${p.born}${p.overall?' · Stärke '+p.overall:''} · ID ${p.id}`;
+    if(p.credit){const c=document.createElement('div');c.className='hint';c.textContent=`Foto: ${p.credit.author} · ${p.credit.license} · Wikimedia Commons`;mid.append(c)}
+    if(NWC[p.nl]){const c=document.createElement('div');c.className='hint';c.style.color='var(--acc)';c.textContent='Freies Commons-Foto verfügbar';mid.append(c)}
     const side=document.createElement('div');side.style.textAlign='right';
     const st=document.createElement('div');st.className='hint';st.textContent=STATE[p.state];side.append(st);
+    if(p.state==='nophoto'){const b=document.createElement('button');b.textContent='Commons-Foto';b.style.cssText='margin-top:4px;background:var(--line);color:var(--fg)';
+      b.onclick=async()=>{b.disabled=true;say('nwmsg','Suche auf Wikimedia Commons …');
+        const r=await fetch('/api/newworld/commons/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nls:[p.nl]})}),j=await r.json();b.disabled=false;
+        if(!r.ok){say('nwmsg',j.detail,1);return}
+        const cand=j[p.nl];if(!cand){say('nwmsg',`Kein freies Commons-Foto (ab 400 px) für ${p.name}`);return}
+        say('nwmsg','');const box=document.createElement('div');box.style.cssText='grid-column:1/-1;display:flex;gap:12px;align-items:center;padding:8px 0';
+        const im=document.createElement('img');im.src=cand.thumb;im.style.cssText='height:130px;border-radius:8px';
+        const t=document.createElement('div');t.innerHTML='<div class="hint"></div>';t.firstChild.textContent=`${cand.author} · ${cand.license} · ${cand.w}×${cand.h}`;
+        const ok=document.createElement('button');ok.textContent='Übernehmen (herunterladen)';
+        ok.onclick=async()=>{ok.disabled=true;const d=new FormData();d.append('nl',p.nl);const r=await fetch('/api/newworld/commons/fetch',{method:'POST',body:d});if(r.ok)nwLoad();else{say('nwmsg',(await r.json()).detail,1);ok.disabled=false}};
+        const no=document.createElement('button');no.textContent='Nein';no.style.cssText='background:var(--line);color:var(--fg)';no.onclick=()=>box.remove();
+        const col=document.createElement('div');col.append(t,ok,document.createTextNode(' '),no);box.append(im,col);row.after(box)};side.append(b)}
     if(p.state==='photo'){const b=document.createElement('button');b.textContent='Berechnen';b.style.marginTop='4px';
       b.onclick=async()=>{b.disabled=true;const d=new FormData();d.append('nl',p.nl);const r=await fetch('/api/newworld/compute',{method:'POST',body:d});if(!r.ok){say('nwmsg',(await r.json()).detail,1);b.disabled=false;return}nwProgress()};side.append(b)}
     row.append(thumb,mid,side);out.append(row)}
@@ -314,6 +329,13 @@ async function nwProgress(){
 $('nwall').onclick=async()=>{const r=await fetch('/api/newworld/compute',{method:'POST',body:new FormData()});if(!r.ok){say('nwmsg',(await r.json()).detail,1);return}nwProgress()};
 $('nwsync').onclick=async()=>{const r=await fetch('/api/newworld/sync',{method:'POST'}),j=await r.json();
   say('nwmsg',r.ok?`${j.written} Gesichter für den aktuellen Build geschrieben`+(j.moved.length?`; ${j.moved.length} Spieler haben eine neue ID (${j.moved.slice(0,3).join(', ')})`:'')+(j.gone?`; ${j.gone} nicht mehr im Build`:''):(j.detail||'Fehler'),!r.ok);nwLoad()};
+$('nwcheck').onclick=async()=>{const rows=[...document.querySelectorAll('#out .hit')].length;
+  const j=await (await fetch('/api/newworld/list?limit=100&state=nophoto&q='+encodeURIComponent($('nwq').value))).json();
+  const nls=j.rows.map(p=>p.nl);if(!nls.length){say('nwmsg','Keine Spieler ohne Foto in der Liste');return}
+  say('nwmsg','Prüfe '+nls.length+' Spieler auf Commons (nur Metadaten, es wird nichts heruntergeladen) …');
+  const r=await fetch('/api/newworld/commons/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nls})}),c=await r.json();
+  if(!r.ok){say('nwmsg',c.detail,1);return}
+  for(const nl of nls)delete NWC[nl];Object.assign(NWC,c);say('nwmsg',`${Object.keys(c).length} von ${nls.length} haben ein freies Foto auf Commons`);nwLoad()};
 $('nwref').onclick=async()=>{await fetch('/api/newworld/refresh',{method:'POST'});nwLoad()};
 $('nwq').oninput=()=>{clearTimeout(nwtimer);nwtimer=setTimeout(nwLoad,250)};$('nwstate').onchange=nwLoad;
 </script>

@@ -1,7 +1,7 @@
 import contextlib, io, os, tempfile, time
 from pathlib import Path
 
-from fastapi import FastAPI, Request, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, Request, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -419,6 +419,34 @@ def nw_progress():
 def nw_sync():
     _nw_need()
     return nw.sync()
+
+
+@app.post("/api/newworld/commons/check")
+def nw_commons_check(nls: list = Body(..., embed=True)):
+    """Metadata only, no image: for which of these players does Wikimedia Commons offer a free portrait?"""
+    from . import commons
+    _nw_need()
+    want = {str(x) for x in nls[:100]}
+    try:
+        return commons.check([p for p in nw.players() if p["nl"] in want])
+    except Exception as e:
+        raise HTTPException(502, f"Wikimedia nicht erreichbar: {e}")
+
+
+@app.post("/api/newworld/commons/fetch")
+def nw_commons_fetch(nl: str = Form(...)):
+    """Download the photo of ONE player after the user confirmed the preview."""
+    from . import commons
+    _nw_need()
+    p = next((p for p in nw.players() if p["nl"] == nl), None)
+    if not p:
+        raise HTTPException(404, "Spieler nicht gefunden")
+    try:
+        return commons.fetch(nl, p["name"], p["born"])
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Wikimedia nicht erreichbar: {e}")
 
 
 @app.get("/api/players")

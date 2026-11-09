@@ -68,6 +68,14 @@ release zips) and marks who still has the generic pack face. Players that alread
    `fl26playerids.json`. `faceai.lua` uses the rows only while the fingerprint still matches, so a face can never land on the
    wrong player after a rebuild; if the build changed it logs that a new Sync is needed.
 
+**Photos from Wikimedia Commons, on request only.** On a row without a photo, **Commons-Foto** looks the player up on Wikidata
+(same birth date, similar name) and shows the portrait Commons has for him, with author and licence. Only after you press
+*Übernehmen* is that one image downloaded; author, licence and source are kept next to it (`newworld_photos/credits.json`) and
+shown in the list. Only CC0, public domain, CC BY and CC BY-SA files of at least 400 px are offered. **Sichtbare auf Commons
+prüfen** asks metadata only (no images) and marks the rows that have a free photo. A count on a sample of 600 players put the
+share with a free Commons photo at roughly 40 % of the strongest 1,000 and roughly 10 % of the weakest, about 17 % overall.
+Requests are throttled to one per second and carry a descriptive User-Agent.
+
 Paths: `FACEAI_DIR` = `<SiderAddons>/content/faceai` (the tool derives `SiderAddons` from it; override with `SIDER_DIR`),
 `NEWLIFE_DIR` = the folder with the NewLife zips (default `~/Downloads/NewLife*`).
 
@@ -106,7 +114,7 @@ def get(record: bytes, pos: int, width: int, bias: int) -> int:
     return ((bits >> pos) & ((1 << width) - 1)) - bias
 ```
 
-Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `tests/check_stats.py` the stat conversion.
+Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `tests/check_stats.py` the stat conversion, `tests/check_fingerprint.py` the build fingerprint (Python vs Lua), `tests/check_commons.py` the licence filter.
 
 ## Limits (please read)
 
@@ -129,6 +137,7 @@ Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `
   appearance table size and how new-world players get faces; `faceai.lua` is written to coexist with them.
 - **FL Mod Studio** (Matozanato, MIT) – the world files and NewLife releases the *New World* tab reads; its documentation of the world file and of the `fl26` modules was the reference for how new players get their faces.
 - **Karijera 26** – `PlayerDump` (optional source of the player list) and `GrowthBridge`, whose documented player-block layout (7-bit attribute fields) `faceai_stats.lua` uses. Not included.
+- **Wikimedia Commons / Wikidata** – portraits offered on request, with the photographers' attribution kept.
 - **DeepFace** (Sefik Ilkin Serengil) and **FaceNet** – face embeddings.
 - **MediaPipe** (Google, Apache-2.0) – hair segmentation model, downloaded on first use.
 - **OpenAI CLIP** via Hugging Face Transformers – zero-shot hairstyle step.

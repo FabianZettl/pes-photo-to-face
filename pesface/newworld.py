@@ -27,7 +27,7 @@ WORLDTXT = SIDER / "modules" / "fl26world.txt"
 STORE = FACEAI_DIR / "newworld_faces.json"     # nl id -> {"values": {...}, "name": ..., "game_id": ...}
 OUT = FACEAI_DIR / "faceai_newworld.csv"       # rows with the current game ids, applied by faceai.lua
 SIG = FACEAI_DIR / "faceai_world.sig"          # line 1: path of fl26playerids.json relative to SiderAddons, line 2: fingerprint
-PHOTOS = ROOT / "newworld_photos"
+PHOTOS = Path(os.environ.get("NEWWORLD_PHOTOS") or ROOT / "newworld_photos")
 
 OUTFIELD = ["Offensive Awareness", "Ball Control", "Dribbling", "Tight Possession", "Low Pass", "Lofted Pass", "Finishing",
             "Heading", "Speed", "Acceleration", "Kicking Power", "Jump", "Physical Contact", "Balance", "Stamina",
@@ -149,10 +149,16 @@ def save_photo(nl, jpeg_bytes):
     (PHOTOS / f"{nl}.jpg").write_bytes(jpeg_bytes)
 
 
+def _credit(nl):
+    f = PHOTOS / "credits.json"
+    return json.loads(f.read_text()).get(nl) if f.exists() else None
+
+
 def listing(q="", state="", limit=200):
     """Rows for the UI, strongest players first. state: '' | 'nophoto' | 'photo' | 'done'."""
     st = _store()
-    q = q.lower().split()
+    from .model import _fold
+    q = _fold(q).split()   # accent-insensitive: 'aydogdu' finds 'Aydoğdu'
     rows = []
     for p in players():
         has_photo = photo_file(p["nl"]) is not None
@@ -161,9 +167,9 @@ def listing(q="", state="", limit=200):
             continue   # hidden unless asked for: they need nothing
         if state and s != state:
             continue
-        hay = f'{p["name"]} {p["club"]} {p["born"]}'.lower()
+        hay = _fold(f'{p["name"]} {p["club"]} {p["born"]}')
         if all(w in hay for w in q):
-            rows.append({**p, "state": s})
+            rows.append({**p, "state": s, "credit": _credit(p["nl"])})
     rows.sort(key=lambda r: -(r["overall"] or 0))
     return rows[:limit], len(rows)
 
