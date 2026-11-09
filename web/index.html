@@ -83,6 +83,8 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
     <pre id="tlog"></pre>
   </div>
   <div class="card" id="p3" hidden>
+    <div id="hbox" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
+    <div class="hint" id="hboxnote" style="margin:0 0 8px"></div>
     <div class="drop" id="hdrop">Haar-Foto hierher ziehen<br>oder klicken</div>
     <input id="hfile" type="file" accept="image/*" hidden>
     <div class="msg">So würdest du die Haare im Spiel einstellen (vorbelegt mit dem Vorschlag des Tools):</div>
@@ -104,7 +106,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
     <div class="hairsel" style="grid-template-columns:1fr;margin-top:0">
       <select id="tb" title="Seite/Hinten"><option value="">Seite/Hinten</option><option value="1">Normal</option><option value="2">Weniger Volumen</option><option value="3">Kürzere Seiten</option><option value="4">Kurzgeschnitten</option></select>
     </div>
-    <div class="row"><button id="hsave" disabled>Foto speichern</button><button id="hrun">Training starten</button></div>
+    <div class="row"><button id="hsave" disabled>Foto speichern</button><button id="hdiscard" hidden style="background:var(--line);color:var(--fg)">Verwerfen</button><button id="hrun">Training starten</button></div>
     <div class="msg" id="hmsg"></div>
     <pre id="hlog"></pre>
   </div>
@@ -141,7 +143,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
 
 <script>
 const G={Augen:/Eye|Iris|Pupil|Eyelid/,Brauen:/Brow|Temple/,Nase:/Nose|Nostril|Laughter/,Mund:/Lip|Mouth/,'Haare · Vorne':/^Hair(Front|Parting|Hairline|Forehead)/,'Haare · Seite/Hinten':/^HairBack/,'Haare · Gesamt':/^Hair/,Kinn:/Chin|Jaw|Cheek|Neck/,Ohren:/^Ear/,Bart:/Facial|Thickness/,Kopf:/^(Head|Face|Skin|Forehead)/};
-const $=id=>document.getElementById(id);let file,tfile,hfile,tab=1,bpoll,fmpoll,nwpoll,nwtimer,teampoll;
+const $=id=>document.getElementById(id);let file,tfile,hfile,tab=1,bpoll,fmpoll,nwpoll,nwtimer,teampoll,curBox=null,boxItems=[];
 const say=(el,t,e)=>{$(el).textContent=t;$(el).className='msg'+(e?' err':'')};
 const post=(url,f,extra)=>{const d=new FormData();d.append('photo',f);for(const k in extra)d.append(k,extra[k]);return fetch(url,{method:'POST',body:d})};
 
@@ -162,7 +164,7 @@ function render(values,ranges,title){
 function setTab(n){tab=n;$('t1').className=n==1?'on':'';$('t2').className=n==2?'on':'';$('t3').className=n==3?'on':'';$('t4').className=n==4?'on':'';$('t5').className=n==5?'on':'';$('t6').className=n==6?'on':'';$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('p3').hidden=n!=3;$('p4').hidden=n!=4;$('p5').hidden=n!=5;$('p6').hidden=n!=6;$('pcard').hidden=n==3||n==4||n==5||n==6;
   $('out').replaceChildren(Object.assign(document.createElement('span'),{textContent:n==1?'Noch kein Ergebnis.':n==2?'Wähle einen Spieler: hier erscheinen seine aktuellen Spieldaten.':n==3?'Foto laden: hier erscheint der Vorschlag des Tools für die Haare.':n==4?'Hier erscheint das Ergebnis des Durchlaufs.':n==5?'Noch nichts empfangen.':'Lade …',style:'color:var(--mut)'}));
   if(n==2)loadTruth()}
-$('t1').onclick=()=>setTab(1);$('t2').onclick=()=>setTab(2);$('t3').onclick=()=>{setTab(3);hairCount()};$('t4').onclick=()=>setTab(4);$('t5').onclick=()=>{setTab(5);fmLoad();fetch('/api/fm/settings').then(r=>r.json()).then(j=>$('fmauto').checked=j.on)};
+$('t1').onclick=()=>setTab(1);$('t2').onclick=()=>setTab(2);$('t3').onclick=()=>{setTab(3);hairCount();hairBoxLoad()};$('t4').onclick=()=>setTab(4);$('t5').onclick=()=>{setTab(5);fmLoad();fetch('/api/fm/settings').then(r=>r.json()).then(j=>$('fmauto').checked=j.on)};
 $('fmauto').onchange=()=>{const d=new FormData();d.append('auto',$('fmauto').checked?'1':'0');fetch('/api/fm/settings',{method:'POST',body:d})};
 window.addEventListener('focus',()=>{if(tab===6)nwLoad()});$('t6').onclick=()=>{setTab(6);nwLoad()};
 
@@ -225,7 +227,30 @@ dropzone($('hdrop'),$('hfile'),async f=>{
   $('tf').value=values.HairFront??'';$('tp').value=values.HairParting??'';$('ta').value=values.HairHairline??'';$('tz').value=values.HairForehead??'';$('tb').value=values.HairBack??'';
   render(Object.fromEntries(Object.entries(values).filter(([k])=>k.startsWith('Hair'))),ranges,'Vorschlag des Tools');
   say('hmsg',(warnings||[]).join(' · '),!!(warnings||[]).length);$('hsave').disabled=false});
-$('hsave').onclick=async()=>{const r=await post('/api/hair/photo',hfile,{style:$('ths').value,length:$('thl').value,curl:$('thc').value,front:$('tf').value,parting:$('tp').value,hairline:$('ta').value,forehead:$('tz').value,back:$('tb').value}),j=await r.json();
+// ---- hair inbox: photos sent from a player page; the photo is dropped as soon as you have labelled it
+async function hairBoxLoad(){
+  boxItems=await (await fetch('/api/hair/inbox')).json();
+  const box=$('hbox');box.replaceChildren();
+  for(const it of boxItems){const im=document.createElement('img');im.src='/api/hair/inbox/photo/'+it.id;im.title=it.name||it.source;
+    im.style.cssText='height:54px;border-radius:6px;cursor:pointer;outline:'+(curBox&&curBox.id===it.id?'2px solid var(--acc)':'none');im.onclick=()=>pickBox(it);box.append(im)}
+  $('hboxnote').textContent=boxItems.length?`${boxItems.length} Foto(s) aus dem Haar-Eingang warten (Klick wählt eins)`:'';
+  if(curBox&&!boxItems.some(i=>i.id===curBox.id)){curBox=null;$('hdiscard').hidden=true}
+  if(!curBox&&boxItems.length&&tab===3)pickBox(boxItems[0])}
+async function pickBox(it){
+  curBox=it;hfile=null;$('hdiscard').hidden=false;$('hdrop').style.backgroundImage=`url(/api/hair/inbox/photo/${it.id})`;$('hdrop').textContent='';
+  $('hsave').disabled=true;say('hmsg','Schlage Einstellungen vor …');
+  const r=await fetch('/api/hair/inbox/suggest/'+it.id);if(!r.ok){say('hmsg',(await r.json()).detail||'Fehler',1);return}
+  const v=await r.json();$('ths').value=v.HairStyle;$('thl').value=v.HairLength;$('thc').value=v.HairCurl;
+  $('tf').value=v.HairFront??'';$('tp').value=v.HairParting??'';$('ta').value=v.HairHairline??'';$('tz').value=v.HairForehead??'';$('tb').value=v.HairBack??'';
+  say('hmsg',`${it.source||'Eingang'}${it.name?' · '+it.name:''}: so würdest du die Haare bauen?`);$('hsave').disabled=false;hairBoxLoad()}
+$('hdiscard').onclick=async()=>{if(!curBox)return;const d=new FormData();d.append('iid',curBox.id);await fetch('/api/hair/inbox/discard',{method:'POST',body:d});curBox=null;$('hdiscard').hidden=true;$('hdrop').style.backgroundImage='';$('hdrop').textContent='Haar-Foto hierher ziehen oder klicken';$('hsave').disabled=true;hairBoxLoad()};
+$('hsave').onclick=async()=>{
+  if(curBox){const d=new FormData();d.append('iid',curBox.id);d.append('style',$('ths').value);d.append('length',$('thl').value);d.append('curl',$('thc').value);
+    d.append('front',$('tf').value);d.append('parting',$('tp').value);d.append('hairline',$('ta').value);d.append('forehead',$('tz').value);d.append('back',$('tb').value);
+    $('hsave').disabled=true;const r=await fetch('/api/hair/inbox/label',{method:'POST',body:d}),j=await r.json();
+    say('hmsg',r.ok?`Gespeichert, das Foto ist verworfen (${j.total} beschriftete Beispiele, ${j.waiting} warten noch)`:(j.detail||'Fehler'),!r.ok);
+    if(r.ok){curBox=null;$('hdiscard').hidden=true;$('hdrop').style.backgroundImage='';$('hdrop').textContent='Nächstes Foto';await hairBoxLoad()}else $('hsave').disabled=false;return}
+  const r=await post('/api/hair/photo',hfile,{style:$('ths').value,length:$('thl').value,curl:$('thc').value,front:$('tf').value,parting:$('tp').value,hairline:$('ta').value,forehead:$('tz').value,back:$('tb').value}),j=await r.json();
   say('hmsg',r.ok?`Gespeichert (${j.total} beschriftete Haar-Fotos)`+(j.warnings.length?'\n'+j.warnings.join('\n'):''):(j.detail||'Fehler'),!r.ok||j.warnings?.length);
   if(r.ok){$('hsave').disabled=true;$('hdrop').style.backgroundImage='';$('hdrop').textContent='Nächstes Foto'}};
 $('hrun').onclick=async()=>{$('hrun').disabled=true;say('hmsg','Training läuft…');$('hlog').textContent='';
@@ -381,14 +406,15 @@ $('nwteambuild').onclick=async()=>{const d=new FormData();d.append('club',$('nwc
 $('nwq').oninput=()=>{clearTimeout(nwtimer);nwtimer=setTimeout(nwLoad,250)};$('nwstate').onchange=nwLoad;
 
 // ---- normal mode: New World only (plus Eingang while something waits there); Dev shows every tool
-let pending=0;
+let pending=0,pendingHair=0;
 const isDev=()=>{try{return localStorage.getItem('pfaDev')==='1'}catch(e){return false}};
 function applyMode(){
   const dev=isDev();$('devtoggle').className=dev?'on':'';
-  for(const id of ['t1','t2','t3','t4'])$(id).hidden=!dev;
+  for(const id of ['t1','t2','t4'])$(id).hidden=!dev;
+  $('t3').hidden=!(dev||pendingHair>0);$('t3').innerHTML='Haare'+(pendingHair?` <b>${pendingHair}</b>`:'');
   $('t5').hidden=!(dev||pending>0);$('t5').innerHTML='Eingang'+(pending?` <b>${pending}</b>`:'');
   const hiddenTab={1:'t1',2:'t2',3:'t3',4:'t4',5:'t5'}[tab];if(hiddenTab&&$(hiddenTab).hidden){setTab(6);nwLoad()}}
 $('devtoggle').onclick=()=>{try{localStorage.setItem('pfaDev',isDev()?'0':'1')}catch(e){}applyMode()};
-async function pollInbox(){try{const j=await (await fetch('/api/fm/inbox')).json();pending=j.length}catch(e){}applyMode();setTimeout(pollInbox,4000)}
+async function pollInbox(){try{const j=await (await fetch('/api/fm/inbox')).json();pending=j.length;pendingHair=(await (await fetch('/api/hair/inbox')).json()).length}catch(e){}applyMode();setTimeout(pollInbox,4000)}
 setTab(6);nwLoad();applyMode();pollInbox();
 </script>

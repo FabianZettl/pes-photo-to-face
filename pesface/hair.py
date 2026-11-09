@@ -82,6 +82,35 @@ CLIP_CLASSES = {
 }
 
 
+def _load_clip():
+    global _clip
+    if _clip is None:
+        from transformers import CLIPModel, CLIPProcessor
+        _clip = (CLIPModel.from_pretrained("openai/clip-vit-base-patch32").eval(),
+                 CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32"))
+    return _clip
+
+
+def hair_embedding(rgb, face, mask):
+    """CLIP embedding of the hair region only (bounding box of the hair mask around the head, a little padding), so the
+    classifier sees the hair and not the face. Falls back to the head crop when there is hardly any hair in the mask."""
+    import torch
+    from PIL import Image
+    model, proc = _load_clip()
+    H, W = rgb.shape[:2]
+    x, y, w, h = face
+    x0, x1, y0, y1 = max(0, int(x - 0.8 * w)), min(W, int(x + 1.8 * w)), max(0, int(y - 1.1 * h)), min(H, int(y + 1.3 * h))
+    ys, xs = np.where(mask[y0:y1, x0:x1])
+    if len(ys) < 200:
+        box = (max(0, int(x - 0.7 * w)), max(0, int(y - 1.0 * h)), min(W, int(x + 1.7 * w)), min(H, int(y + 1.2 * h)))
+    else:
+        pad = int(0.05 * max(w, h))
+        box = (max(0, x0 + xs.min() - pad), max(0, y0 + ys.min() - pad), min(W, x0 + xs.max() + pad), min(H, y0 + ys.max() + pad))
+    with torch.no_grad():
+        e = model.get_image_features(**proc(images=Image.fromarray(rgb[box[1]:box[3], box[0]:box[2]]), return_tensors="pt"))[0].numpy()
+    return e / np.linalg.norm(e)
+
+
 def _clip_probs(crop, prompts):
     """Softmax over free-text prompts for a PIL image (loads CLIP once)."""
     global _clip
@@ -157,7 +186,7 @@ def _mask(rgb):
     return np.squeeze(out.category_mask.numpy_view()) == 1
 
 
-def analyze(img_path, face):
+def analyze(img_path, face, use_model=True):
     """face = (x, y, w, h) of the detected face. Returns dict of hair values plus the features used."""
     rgb = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
     m = _mask(rgb)
@@ -219,11 +248,14 @@ def analyze(img_path, face):
     else:
         stats = None
     guess = {"HairStyle": STYLE[style], "HairLength": LENGTH[length], "HairCurl": curl}
-    from . import hairmodel
-    guess.update(hairmodel.predict(emb, guess))
+    rules = dict(guess)
+    emb2 = hair_embedding(rgb, face, m)
+    if use_model:
+        from . import hairmodel
+        guess.update(hairmodel.predict(emb, emb2, guess))
     preset = colour_preset(stats)
     col = np.array(PRESETS[preset])
     return {**guess, "_colstats": stats, "HairColourType": preset,
             "HairColourR": int(col[0]), "HairColourG": int(col[1]), "HairColourB": int(col[2]),
-            "_emb": emb, "_why": dict(clip={k: round(v, 2) for k, v in pr.items()}, style=style, length=length, top=round(top, 2), side=round(side, 2), below=round(below, 2),
+            "_emb": emb, "_emb2": emb2, "_rules": rules, "_why": dict(clip={k: round(v, 2) for k, v in pr.items()}, style=style, length=length, top=round(top, 2), side=round(side, 2), below=round(below, 2),
                          spread=round(spread, 2), core=round(core, 2), outer=round(outer, 2), rough=round(float(rough), 2), tex=round(tex, 1))}

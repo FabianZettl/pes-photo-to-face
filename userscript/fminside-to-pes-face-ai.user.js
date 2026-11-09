@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Player page → PES Face AI
 // @namespace    https://github.com/FabianZettl/pes-photo-to-face
-// @version      0.8
+// @version      0.9
 // @description  One click on a player page that YOU opened (FMInside, Transfermarkt, SoFIFA): sends name, club, birth date and photo to your local PES Face AI tool.
 // @match        https://fminside.net/players/*
 // @match        https://www.fminside.net/players/*
@@ -15,8 +15,9 @@
 // @connect      *
 // ==/UserScript==
 // Runs only when you press the button on a page you opened yourself. It does not crawl, search or follow links.
-// The photo is handed to your local tool, which computes the face from it and drops it (it is never stored or shared,
-// and never used for training). Selectors are best guesses for these sites: when something is not found the toast says
+// "→ PES Face AI": the photo is handed to your local tool, which computes the face from it and drops it (never stored or shared).
+// "→ Haare lernen" (not on FMInside, whose content is reserved against AI training): the photo waits in RAM in the tool's
+// Haare tab until you have labelled the hair; then only image features and your labels are kept for training, the photo is dropped. Selectors are best guesses for these sites: when something is not found the toast says
 // what, and the console shows what the script saw.
 
 (function () {
@@ -147,7 +148,7 @@
   const gm = (opts) => new Promise((res, rej) => GM_xmlhttpRequest({ ...opts, onload: res,
     onerror: () => rej(new Error("Netzwerkfehler")), ontimeout: () => rej(new Error("Zeitüberschreitung")), onabort: () => rej(new Error("abgebrochen")) }));
 
-  async function run() {   // -> {msg, kind: ok | warn | bad}
+  async function run(learn) {   // -> {msg, kind: ok | warn | bad}
     const d = scrape();
     console.log("[PES Face AI] gefunden:", { ...d, stats: Object.keys(d.stats).length + " Werte" });
     if (!d.name) return { msg: "Name nicht gefunden (Seitenlayout geändert?). Siehe Konsole.", kind: "bad" };
@@ -168,6 +169,13 @@
           image = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(im.response); });
         } else note = ` Foto-Download abgelehnt (Status ${im.status}): bitte das Foto im Tool-Tab "Eingang" von Hand ablegen.`;
       } else note = ' Kein Foto auf der Seite gefunden: bitte im Tool-Tab "Eingang" von Hand ablegen (siehe Konsole).';
+      if (learn) {
+        if (!image) return { msg: "Kein Foto geladen." + note, kind: "bad" };
+        const r = await gm({ method: "POST", url: SERVER + "/api/hair/inbox", headers: { "Content-Type": "application/json" },
+          data: JSON.stringify({ name: d.name, source: d.source, image }), timeout: 60000 });
+        if (r.status !== 200) { let why = r.status; try { why = JSON.parse(r.responseText).detail || why; } catch (e) { /* not JSON */ } return { msg: "Tool meldet: " + why, kind: "bad" }; }
+        return { msg: `Foto von ${d.name} liegt im Tab "Haare" (${JSON.parse(r.responseText).waiting} warten). Dort beschriften.`, kind: "ok" };
+      }
       const r = await gm({ method: "POST", url: SERVER + "/api/fm/import", headers: { "Content-Type": "application/json" },
         data: JSON.stringify({ ...d, image }), timeout: 60000 });
       if (r.status !== 200) {
@@ -188,14 +196,14 @@
   const LABELS = { idle: "→ PES Face AI", busy: "… sendet", ok: "✔ fertig", warn: "⚠ siehe Meldung", bad: "✖ Fehler" };
   let busy = false;
   function setBtn(kind) { btn.textContent = LABELS[kind]; btn.style.background = COLORS[kind]; }
-  async function send() {
+  async function send(learn) {
     if (busy) return toast("Läuft schon, bitte einen Moment …");
     busy = true;
     setBtn("busy");
     toast("Sende …");
     const dog = setTimeout(() => { toast("Keine Antwort nach " + Math.round(WATCHDOG / 1000) + " Sekunden. Läuft das Tool, und ist der Server auf " + SERVER + " erreichbar?", true); setBtn("bad"); busy = false; }, WATCHDOG);
     let res;
-    try { res = await run(); } catch (e) { console.error(e); res = { msg: "Fehler im Skript: " + e.message + " (siehe Konsole)", kind: "bad" }; }
+    try { res = await run(learn === true); } catch (e) { console.error(e); res = { msg: "Fehler im Skript: " + e.message + " (siehe Konsole)", kind: "bad" }; }
     clearTimeout(dog);
     if (!busy) return;   // the watchdog already reported
     busy = false;
@@ -210,6 +218,13 @@
   const btn = document.createElement("button");
   btn.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:99999;padding:10px 16px;border:0;border-radius:10px;color:#fff;font:600 14px system-ui;cursor:pointer;box-shadow:0 4px 16px #0005";
   setBtn("idle");
-  btn.onclick = send;
+  btn.onclick = () => send(false);
   document.body.append(btn);
+  if (site() !== "fminside") {   // FMInside reserves its content against AI training
+    const hb = document.createElement("button");
+    hb.textContent = "→ Haare lernen";
+    hb.style.cssText = btn.style.cssText.replace(/bottom:\s*16px/, "bottom:112px") + ";background:#7c3aed";
+    hb.onclick = () => send(true);
+    document.body.append(hb);
+  }
 })();

@@ -68,13 +68,15 @@ The tool never crawls a site. Photos come only like this:
 - **Browser hand-off for pages you open yourself** (FMInside, Transfermarkt, SoFIFA; `userscript/`). One click on a player page
   sends name, club, birth date and photo to your local tool. The tool matches the player; an exact match (equal birth date,
   nearly equal name) is built immediately, anything less certain waits in *Eingang* for your confirmation. **The photo is used
-  once and dropped: it is never stored, shared or used for training.** Every click ends in a visible result (button state,
+  once and dropped: it is never stored or shared.** On Transfermarkt and SoFIFA a second button, **→ Haare lernen**, puts the photo
+  in the *Haare* tab instead: it waits in RAM until you have said how you would build the hair in game; then only CLIP image
+  features and your labels are kept for training and the photo is dropped. FMInside has no such button. Every click ends in a visible result (button state,
   toast). The selectors are best guesses (the sites block automated access); see the limits.
 - **Photos you drop in** (on a row, or a folder of `<playerID>.jpg` via the Dev *Bulk* tab).
 - Photos should be front-facing, hair visible, ideally ≥ 800 px; the tool warns about small ones.
 
-Respect each site's terms. FMInside reserves its content against AI training and kicker blocks AI crawlers, so neither is a
-source for training data. SoFIFA's player images are EA's game renders, Transfermarkt's are agency photos.
+Respect each site's terms; checking them is your job. FMInside reserves its content against AI training and kicker blocks AI
+crawlers, so neither is a source for training data. SoFIFA's player images are EA's game renders, Transfermarkt's are agency photos.
 
 ## Install
 
@@ -104,7 +106,8 @@ python -m pesface serve                    # http://localhost:8000
 Face sliders: a ridge regression on FaceNet embeddings (about 1,000 players from the original project as base data; cross-validated
 about 20 % better than predicting the average; skin tone, nose and brows work, head/ear proportions hardly). Hair: rules on a MediaPipe
 hair mask plus a zero-shot CLIP step for braids, locks, afro and mohawk; colour is snapped to the game's seven presets; beard is a
-CLIP decision (none / stubble / full). With about 40 labelled photos a classifier takes over the hair options. In the Dev tabs you add
+CLIP decision (none / stubble / full). With about 40 labelled photos a classifier takes over the hair options; per option the training compares feature sets (head crop, hair
+region, both) by cross-validation and keeps the best. In the Dev tabs you add
 training photos with their in-game values (*Training*) or label hair yourself (*Haare*) and retrain.
 
 ## Use the layout in your own tool

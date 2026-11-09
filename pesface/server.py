@@ -594,6 +594,85 @@ def nw_team_progress():
     return TEAM
 
 
+# ---------------------------------------------------------------- hair inbox: photos from pages, labelled by you, then dropped
+HAIRBOX = {}   # id -> {name, source, image(jpeg bytes), created}; RAM only. On labelling only features + labels are kept.
+
+
+@app.post("/api/hair/inbox")
+async def hair_inbox_add(request: Request):
+    """From the user script ("→ Haare lernen"): one photo of a page the user opened, to be labelled in the Haare tab."""
+    import base64, re, uuid
+    d = await request.json()
+    m = re.match(r"data:[^,]*;base64,(.*)", d.get("image") or "", re.S)
+    if not m:
+        raise HTTPException(422, "Bild fehlt (data-URL erwartet)")
+    raw = _to_jpeg(base64.b64decode(m.group(1)))
+    if len(HAIRBOX) >= 300:   # a forgotten pile must not grow without limit
+        HAIRBOX.pop(next(iter(HAIRBOX)))
+    iid = uuid.uuid4().hex[:8]
+    HAIRBOX[iid] = {"id": iid, "name": str(d.get("name", "")).strip(), "source": str(d.get("source", "")), "image": raw,
+                    "created": time.time()}
+    return {"ok": True, "id": iid, "waiting": len(HAIRBOX)}
+
+
+@app.get("/api/hair/inbox")
+def hair_inbox_list():
+    return [{k: v for k, v in it.items() if k != "image"} for it in HAIRBOX.values()]
+
+
+@app.get("/api/hair/inbox/photo/{iid}")
+def hair_inbox_photo(iid: str):
+    it = HAIRBOX.get(iid)
+    if not it:
+        raise HTTPException(404)
+    return Response(it["image"], media_type="image/jpeg")
+
+
+@app.get("/api/hair/inbox/suggest/{iid}")
+def hair_inbox_suggest(iid: str):
+    """The tool's own guess for the dropdowns (rules, or the learned model once it is active)."""
+    it = HAIRBOX.get(iid)
+    if not it:
+        raise HTTPException(404)
+    with tempfile.NamedTemporaryFile(suffix=".jpg") as t:
+        t.write(it["image"]); t.flush()
+        try:
+            vals = predict_all(t.name)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+    return {k: v for k, v in vals.items() if k.startswith("Hair")}
+
+
+@app.post("/api/hair/inbox/label")
+def hair_inbox_label(iid: str = Form(...), style: int = Form(...), length: int = Form(...), curl: int = Form(...),
+                     front: str = Form(""), parting: str = Form(""), hairline: str = Form(""), forehead: str = Form(""),
+                     back: str = Form("")):
+    """Keep the CLIP features of the photo and the labels; the photo itself is dropped."""
+    from . import hairmodel
+    it = HAIRBOX.get(iid)
+    if not it:
+        raise HTTPException(404, "Eintrag nicht gefunden")
+    label = {"HairStyle": style, "HairLength": length, "HairCurl": curl}
+    for k, v in (("HairFront", front), ("HairParting", parting), ("HairHairline", hairline), ("HairForehead", forehead), ("HairBack", back)):
+        if v.isdigit():
+            label[k] = int(v)
+    with tempfile.NamedTemporaryFile(suffix=".jpg") as t:
+        t.write(it["image"]); t.flush()
+        try:
+            head, hair_emb, rules = hairmodel.features(t.name)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+    hairmodel.add_embedded(label, head, hair_emb, rules, it["source"])
+    del HAIRBOX[iid]
+    return {**hairmodel.counts(), "waiting": len(HAIRBOX)}
+
+
+@app.post("/api/hair/inbox/discard")
+def hair_inbox_discard(iid: str = Form(...)):
+    HAIRBOX.pop(iid, None)
+    return {"waiting": len(HAIRBOX)}
+
+
 @app.get("/api/players")
 def players(q: str = "", face_only: bool = False, team: str = ""):
     return model.search_players(q, face_only, team)
