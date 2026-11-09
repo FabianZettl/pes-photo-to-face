@@ -125,9 +125,12 @@ def get(record: bytes, pos: int, width: int, bias: int) -> int:
     return ((bits >> pos) & ((1 << width) - 1)) - bias
 ```
 
-Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `tests/check_stats.py` the stat conversion, `tests/check_fingerprint.py` the build fingerprint (Python vs Lua), `tests/check_commons.py` the licence filter, `tests/check_userscript.py` the page scraper (fixtures), `tests/check_userscript_feedback.py` that every click ends in a visible result.
+Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `tests/check_stats.py` the stat conversion, `tests/check_fingerprint.py` the build fingerprint (Python vs Lua), `tests/check_commons.py` the licence filter, `tests/check_userscript.py` the page scraper (fixtures), `tests/check_userscript_feedback.py` that every click ends in a visible result, `tests/check_release.py` the live take-over from `fl26regen` (fake process).
 
 ## Limits (please read)
+
+- Letting `faceai.lua` take players over from `fl26regen`'s pack faces live (no restart) is built from that DLL's source and tested against a
+  fake process only; the first run in a real game shows in `sider.log` (`fl26regen's list found …`, `… taken over …`).
 
 - Verified only on the Football Life 2027 build (`FL_2027.exe`). Other builds may use other offsets.
 - The in-memory table is verified. The on-disk `PlayerAppearance.bin` container (zlib) is *not* verified to use the same

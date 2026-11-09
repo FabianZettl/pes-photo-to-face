@@ -15,6 +15,7 @@ local SIG = "content\\faceai\\faceai_world.sig"        -- path of fl26playerids.
 local STRIDE, TABLE_OFF, CAP = 72, 0x50910, 64999
 local EDITED_FLAG_BIT = 32
 local DEFAULT_TEMPLATE = 178371
+local STRIP_WORLD = false   -- no longer needed: players are released from fl26regen live (see release()); stripping also drops their pack portrait
 local LAYOUT = {
   ["SkinColour"]={360,3,0,0,6},
   ["HeadLength"]={140,4,7,-7,7},
@@ -103,6 +104,7 @@ local CANON = "Id," .. table.concat(NAMES, ",")
 
 local ctx_ref, last = nil, "F9 = apply faceai.csv"
 local probes = {}
+local managed = {}   -- every player we have written: released from fl26regen again whenever its list is rebuilt
 local viewed, snap, snap_n = nil, nil, 0
 
 local function any(t) for _ in pairs(t) do return true end return false end
@@ -267,6 +269,129 @@ local function world_ok()
   return world_ok_v, world_why
 end
 
+
+-- ---------------------------------------------------------------------------------------------------------------
+-- fl26regen.dll keeps a list of the world's new players (g_nlist, 8 bytes each: u32 id, i16 face, u8 keep, u8 pad) and every
+-- 250 ms it copies the pack face over the appearance record of each one whose face is >= 0 -- also over a record we wrote.
+-- Setting `face` to -1 makes the DLL leave that player alone; it takes effect at once, no restart. We find the list by its
+-- pointer in the DLL's own data (validated: ascending ids and a managed id in it), set face = -1 for the players we manage,
+-- and redirect their portrait ourselves (the DLL only does it while face >= 0). Nothing happens when fl26regen is not there.
+local dll = {tried = false}
+local portrait = {}   -- id -> portrait key the DLL would have used
+
+function m.dll_open()   -- -> {base=, size=}  or nil; the seam the tests replace
+  local F = ffi
+  if not F then return nil, "no ffi" end
+  pcall(F.cdef, [[ void* FA_GetModuleHandleA(const char*) __asm__("GetModuleHandleA");
+                   void* FA_GetProcAddress(void*, const char*) __asm__("GetProcAddress"); ]])
+  local h = F.C.FA_GetModuleHandleA("fl26regen.dll")
+  if h == nil then return nil, "fl26regen.dll is not loaded" end
+  local p = F.C.FA_GetProcAddress(h, "fl26_regen_face")
+  local hdr = rd(num(h), 0x200)
+  if p == nil or not hdr then return nil, "cannot read the DLL" end
+  local e = memory.unpack("u32", hdr:sub(0x3D, 0x40))
+  local size = memory.unpack("u32", hdr:sub(e + 0x51, e + 0x54))   -- OptionalHeader.SizeOfImage
+  local face = F.cast("int (*)(uint32_t)", p)
+  return {base = num(h), size = size, face = function(id) return tonumber(face(id)) end}
+end
+
+local function entry(s, i)   -- i = 0-based entry of a string holding the list
+  local o = i * 8
+  return memory.unpack("u32", s:sub(o + 1, o + 4)), memory.unpack("u16", s:sub(o + 5, o + 6)), s:byte(o + 7), s:byte(o + 8)
+end
+
+local function looks_like_list(addr)
+  local head = rd(addr, 64)   -- cheap first look: eight entries in ascending order
+  if not head then return nil end
+  local p0 = 0
+  for i = 0, 7 do
+    local id, face, keep, pad = entry(head, i)
+    if id <= p0 or id > 400000 or (face >= 0x1000 and face ~= 0xFFFF) or keep > 1 or pad ~= 0 then return nil end
+    p0 = id
+  end
+  local s = rd(addr, 8 * 4096)
+  if not s then return nil end
+  local prev, n = 0, 0
+  for i = 0, 4095 do
+    local id, face, keep, pad = entry(s, i)
+    if id == 0 then break end
+    if id <= prev or id > 400000 or (face >= 0x1000 and face ~= 0xFFFF) or keep > 1 or pad ~= 0 then return nil end
+    prev, n = id, n + 1
+  end
+  if n < 20 then return nil end
+  return n
+end
+
+local function dll_scan()   -- find g_nlist: a pointer in the DLL image that points at a list like that
+  local img = rd(dll.base, 0x1000) and dll.size
+  if not img then return nil, "cannot read the DLL image" end
+  local F = ffi
+  for off = 0, dll.size - 8, 0x10000 do
+    local len = math.min(0x10000, dll.size - off)
+    local chunk = rd(dll.base + off, len)
+    if chunk then
+      for i = 0, len - 8, 8 do
+        local v = memory.unpack("u64", chunk:sub(i + 1, i + 8))
+        v = num(v)
+        if v and v >= 0x10000 and v < 0x7FFFFFFFFFFF and v % 4 == 0 and (v < dll.base or v >= dll.base + dll.size) then
+          if looks_like_list(v) then return v end
+        end
+      end
+    end
+  end
+  return nil, "the DLL's list was not found"
+end
+
+-- set face = -1 for these ids (those that are in the list with face >= 0); returns how many were released
+local function release(ids)
+  if not any(ids) then return 0 end
+  if not dll.tried then
+    dll.tried = true
+    local d, why = m.dll_open()
+    if not d then log("faceai: fl26regen release off (" .. tostring(why) .. ")"); return 0 end
+    dll.base, dll.size, dll.face = d.base, d.size, d.face
+  end
+  if not dll.face then return 0 end
+  if not dll.list then
+    local v, why = dll_scan()
+    if not v then log("faceai: could not find fl26regen's list (" .. tostring(why) .. "); its pack faces may overwrite ours"); dll.tried = true; dll.face = nil; return 0 end
+    dll.list = v
+    log(string.format("faceai: fl26regen's list found at 0x%X", v))
+  end
+  local s = rd(dll.list, 8 * 65536)
+  if not s then dll.list = nil; return 0 end
+  local lo0, hi0 = 0, 65536   -- the list is ascending, then zeros: find the first zero
+  while lo0 < hi0 do local mid = math.floor((lo0 + hi0) / 2); if (entry(s, mid)) == 0 then hi0 = mid else lo0 = mid + 1 end end
+  local n = lo0
+  local released = 0
+  for id in pairs(ids) do
+    local lo, hi = 0, n
+    while lo < hi do local mid = math.floor((lo + hi) / 2); if (entry(s, mid)) < id then lo = mid + 1 else hi = mid end end
+    if lo < n then
+      local eid, face = entry(s, lo)
+      if eid == id and face ~= 0xFFFF then
+        local k = dll.face(id)
+        if k and k >= 0 then portrait[id] = k end
+        memory.write(dll.list + lo * 8 + 4, string.char(0xFF, 0xFF))
+        released = released + 1
+      end
+    end
+  end
+  if released > 0 then log("faceai: " .. released .. " player(s) taken over from fl26regen's pack faces (no restart needed)") end
+  return released
+end
+
+-- portrait of a released player: the DLL stops redirecting it once face = -1, so we do it
+local SEP = string.char(92)
+function m.rewrite(ctx, filename)
+  if not filename:find("player", 1, true) then return nil end
+  local id = filename:match("symbol" .. SEP .. "player" .. SEP .. "(%d+)%.dds$")
+  local k = id and portrait[tonumber(id)]
+  if not k then return nil end
+  return (filename:gsub("symbol" .. SEP .. "player" .. SEP .. "%d+%.dds$", "symbol" .. SEP .. "player" .. SEP .. "regen" .. SEP .. k .. ".dds", 1))
+end
+-- ---------------------------------------------------------------------------------------------------------------
+
 -- Which player is on screen? F10 snapshot, change any slider of that player in Edit, F11: the one record that
 -- differs is the player. A CSV row with Id 0 goes to him.
 function m.snapshot()
@@ -324,7 +449,9 @@ function m.apply(silent)   -- returns true when done or nothing to do, false whi
     local i = pos[id]
     if not i or recs[i]:byte(5) % 2 == 0 then todo[id] = r end
   end
+  for id in pairs(nwset) do todo[id] = d[id] end   -- tool-managed: always written, the DLL may have put its pack face over ours
   for id, r in pairs(q) do todo[id] = r end
+  release(todo)   -- first: the DLL must not write over what we are about to write
   local changed, added, applied, skipped = {}, {}, {}, {}
   for id, row in pairs(todo) do
     local i = pos[id]
@@ -355,6 +482,7 @@ function m.apply(silent)   -- returns true when done or nothing to do, false whi
     memory.write(base, table.concat(out))
     memory.write(app + 0x4c7252, string.char((n + #added) % 256, math.floor((n + #added) / 256)))
   end
+  for id in pairs(applied) do managed[id] = true end
   for id in pairs(applied) do log(string.format("faceai: player %d %s", id, pos[id] and "updated" or "inserted (new record)")) end
   -- queue: drop the imported rows; done: add/replace them
   local keep, done = {}, {}
@@ -405,6 +533,9 @@ function m.tick()
   for _, pr in ipairs(probes) do
     local s = rd(pr.addr, STRIDE)
     if not s or rec_id(s) ~= pr.id or s:byte(5) % 2 == 0 then reset = true end
+  end
+  if dll.list and not reset then   -- the DLL fills its list again when the database block moves: release again
+    if release(managed) > 0 then reset = true end
   end
   if sig == a_sig and app == a_app and not reset then return end
   if m.apply(true) then
@@ -460,9 +591,10 @@ end
 
 function m.init(ctx)
   ctx_ref = ctx
-  strip_world()
+  if STRIP_WORLD then strip_world() end
   ctx.register("key_down", m.key_down); ctx.register("overlay_on", m.overlay_on)
   pcall(ctx.register, "display_frame", m.tick)
+  pcall(ctx.register, "livecpk_rewrite", m.rewrite)
   log("faceai loaded: applies " .. CSV .. " by itself (and on F9)")
 end
 return m

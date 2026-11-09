@@ -74,9 +74,15 @@ Players that the database does not contain have no appearance record. `faceai.lu
 template player's record (optional `Template` column, default in the script) with the new id and the sliders, keeping
 the table sorted by id and increasing the count. This needs room in the table (`fl26appcap`, 65,000 records).
 
-If you also run `fl26regen`, it hands those players a pack face which hides the slider face. `faceai.lua` therefore
-takes the ids it manages out of the `newfaces` lines of `modules/fl26world.txt` at start-up (original kept as
-`.faceai-orig`); list `faceai.lua` **before** `fl26regen.lua` so it runs first.
+**The `fl26regen` pack faces and how we get past them without a restart.** `fl26regen.dll` (source in FL Mod Studio, MIT)
+keeps a list of the world's new players (`g_nlist`: per player a u32 id, an i16 pack-face index, a flag byte and a pad byte)
+and, every 250 ms, copies the pack face over the appearance record of each player in it, also over a record we wrote. Its
+lookup wrapper only answers for a player when the game's table has no record, so our record would win if it were not
+overwritten. `faceai.lua` therefore finds that list in the DLL's own data (a pointer in the image to an ascending list of ids,
+cross-checked against the players it manages) and sets the face index of the players it manages to -1; the DLL then leaves them
+alone. It does this right before writing a record and again whenever the DLL rebuilds its list. The pack portrait, which the
+DLL only redirects while the face index is >= 0, is redirected by `faceai.lua` itself. Nothing is written to the world file.
+This was built from the DLL's source and checked against a fake process (`tests/check_release.py`); see the limits in the README.
 
 ## 5. Training the models
 
