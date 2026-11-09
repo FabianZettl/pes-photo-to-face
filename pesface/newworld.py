@@ -202,10 +202,11 @@ def summary():
             "synced": _sync_ok()}
 
 
-def compute(nl):
-    """Photo of this player -> face values, stored under his NewLife id."""
+def compute(nl, path=None):
+    """Photo of this player -> face values, stored under his NewLife id. path: a photo that is NOT kept (browser hand-off);
+    without it the stored photo of the player is used."""
     from .encoder import predict_all
-    f = photo_file(nl)
+    f = path or photo_file(nl)
     if not f:
         raise ValueError("kein Foto")
     p = next(p for p in players() if p["nl"] == nl)

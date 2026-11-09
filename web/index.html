@@ -33,7 +33,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
 <main>
 <header>
   <h1>PES Face AI <span>Foto ↔ Face-Werte</span></h1>
-  <div class="tabs"><button id="t1" class="on">Erkennen</button><button id="t6">New World</button><button id="t5">FM</button><button id="t4">Bulk</button><button id="t2">Training</button><button id="t3">Haare</button></div>
+  <div class="tabs"><button id="t1" class="on">Erkennen</button><button id="t6">New World</button><button id="t5">Eingang</button><button id="t4">Bulk</button><button id="t2">Training</button><button id="t3">Haare</button></div>
 </header>
 
 <div class="col">
@@ -115,8 +115,9 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
     <div class="msg" id="bmsg"></div>
   </div>
   <div class="card" id="p5" hidden>
-    <h3>FMInside → PES Face AI</h3>
-    <div class="hint" style="margin:0 0 8px">Öffne in deinem Browser eine FMInside-Spielerseite und klicke den Knopf des Userscripts. Der Spieler erscheint hier, du bestätigst den Treffer in der FL-Datenbank.</div>
+    <h3>Eingang · Userscript (FMInside, Transfermarkt, SoFIFA)</h3>
+    <div class="hint" style="margin:0 0 8px">Öffne in deinem Browser eine Spielerseite und klicke den Knopf des Userscripts. Der Spieler erscheint hier, du bestätigst den Treffer in der FL-Datenbank.</div>
+    <label style="display:block;margin:6px 0;font-size:13px"><input type="checkbox" id="fmauto" checked> Bei exaktem Treffer (Name und Geburtsdatum, Neue-Welt-Spieler) sofort berechnen</label>
     <div class="msg" id="fmmsg"></div>
   </div>
   <div class="card" id="p6" hidden>
@@ -157,9 +158,11 @@ function render(values,ranges,title){
 
 // ---- tabs
 function setTab(n){tab=n;$('t1').className=n==1?'on':'';$('t2').className=n==2?'on':'';$('t3').className=n==3?'on':'';$('t4').className=n==4?'on':'';$('t5').className=n==5?'on':'';$('t6').className=n==6?'on':'';$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('p3').hidden=n!=3;$('p4').hidden=n!=4;$('p5').hidden=n!=5;$('p6').hidden=n!=6;$('pcard').hidden=n==3||n==4||n==5||n==6;
-  $('out').replaceChildren(Object.assign(document.createElement('span'),{textContent:n==1?'Noch kein Ergebnis.':n==2?'Wähle einen Spieler: hier erscheinen seine aktuellen Spieldaten.':n==3?'Foto laden: hier erscheint der Vorschlag des Tools für die Haare.':n==4?'Hier erscheint das Ergebnis des Durchlaufs.':n==5?'Noch nichts aus FMInside empfangen.':'Lade …',style:'color:var(--mut)'}));
+  $('out').replaceChildren(Object.assign(document.createElement('span'),{textContent:n==1?'Noch kein Ergebnis.':n==2?'Wähle einen Spieler: hier erscheinen seine aktuellen Spieldaten.':n==3?'Foto laden: hier erscheint der Vorschlag des Tools für die Haare.':n==4?'Hier erscheint das Ergebnis des Durchlaufs.':n==5?'Noch nichts empfangen.':'Lade …',style:'color:var(--mut)'}));
   if(n==2)loadTruth()}
-$('t1').onclick=()=>setTab(1);$('t2').onclick=()=>setTab(2);$('t3').onclick=()=>{setTab(3);hairCount()};$('t4').onclick=()=>setTab(4);$('t5').onclick=()=>{setTab(5);fmLoad()};$('t6').onclick=()=>{setTab(6);nwLoad()};
+$('t1').onclick=()=>setTab(1);$('t2').onclick=()=>setTab(2);$('t3').onclick=()=>{setTab(3);hairCount()};$('t4').onclick=()=>setTab(4);$('t5').onclick=()=>{setTab(5);fmLoad();fetch('/api/fm/settings').then(r=>r.json()).then(j=>$('fmauto').checked=j.on)};
+$('fmauto').onchange=()=>{const d=new FormData();d.append('auto',$('fmauto').checked?'1':'0');fetch('/api/fm/settings',{method:'POST',body:d})};
+window.addEventListener('focus',()=>{if(tab===6)nwLoad()});$('t6').onclick=()=>{setTab(6);nwLoad()};
 
 // ---- player search (shared)
 let ft;const search=()=>{clearTimeout(ft);ft=setTimeout(async()=>{
@@ -249,7 +252,7 @@ async function fmLoad(){
   const out=$('out');
   if(!document.querySelector('#out .fmitem')||out.dataset.n!=items.map(i=>i.id).join()){
     out.dataset.n=items.map(i=>i.id).join();out.replaceChildren();
-    if(!items.length)out.append(Object.assign(document.createElement('span'),{textContent:'Noch nichts aus FMInside empfangen.',style:'color:var(--mut)'}));
+    if(!items.length)out.append(Object.assign(document.createElement('span'),{textContent:'Noch nichts empfangen.',style:'color:var(--mut)'}));
     for(const it of items){
       const box=document.createElement('div');box.className='fmitem';box.style.cssText='display:grid;grid-template-columns:90px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)';
       let img;
@@ -261,7 +264,7 @@ async function fmLoad(){
         img.onclick=()=>fi.click();fi.onchange=e=>up(e.target.files[0]);
         img.ondragover=e=>{e.preventDefault()};img.ondrop=e=>{e.preventDefault();up(e.dataTransfer.files[0])};img.append(fi)}
       const right=document.createElement('div');
-      const head=document.createElement('div');head.innerHTML='<b></b><div class="hint"></div>';head.firstChild.textContent=it.name;head.lastChild.textContent=[it.team,it.nationality,it.dob].filter(Boolean).join(' · ');
+      const head=document.createElement('div');head.innerHTML='<b></b><div class="hint"></div>';head.firstChild.textContent=it.name;head.lastChild.textContent=[it.source,it.team,it.nationality,it.dob].filter(Boolean).join(' · ');
       const sel=document.createElement('select');sel.style.marginTop='8px';
       for(const c of it.cands){const o=new Option(`${c.name} · ${c.teams.join(', ')||'ohne Team'} · ${Math.round(c.score*100)} % · ${c.id}${c.has_face?'':' (kein Datensatz)'}`,c.id);sel.add(o)}
       sel.add(new Option('andere ID …',''));
@@ -316,6 +319,9 @@ async function nwLoad(){
     if(NWC[p.nl]){const c=document.createElement('div');c.className='hint';c.style.color='var(--acc)';c.textContent='Freies Commons-Foto verfügbar';mid.append(c)}
     const side=document.createElement('div');side.style.textAlign='right';
     const st=document.createElement('div');st.className='hint';st.textContent=STATE[p.state];side.append(st);
+    if(p.state==='nophoto'){const lk=document.createElement('div');lk.className='hint';lk.style.marginTop='4px';const q=encodeURIComponent(p.name);
+      for(const [t,u] of [['Transfermarkt','https://www.transfermarkt.com/schnellsuche/ergebnis/schnellsuche?query='+q],['SoFIFA','https://sofifa.com/players?keyword='+q]]){const a=document.createElement('a');a.textContent=t;a.href=u;a.target='_blank';a.rel='noopener';a.style.marginLeft='8px';lk.append(a)}
+      side.append(lk)}
     if(p.state==='nophoto'){const b=document.createElement('button');b.textContent='Commons-Foto';b.style.cssText='margin-top:4px;background:var(--line);color:var(--fg)';
       b.onclick=async()=>{b.disabled=true;say('nwmsg','Suche auf Wikimedia Commons …');
         const r=await fetch('/api/newworld/commons/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nls:[p.nl]})}),j=await r.json();b.disabled=false;

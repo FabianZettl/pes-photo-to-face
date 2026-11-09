@@ -79,23 +79,26 @@ Requests are throttled to one per second and carry a descriptive User-Agent.
 Paths: `FACEAI_DIR` = `<SiderAddons>/content/faceai` (the tool derives `SiderAddons` from it; override with `SIDER_DIR`),
 `NEWLIFE_DIR` = the folder with the NewLife zips (default `~/Downloads/NewLife*`).
 
-## FMInside hand-off (optional)
+## Player-page hand-off (FMInside, Transfermarkt, SoFIFA; optional)
 
-For players that exist in your database, take the photo and the Football Manager values from their FMInside page:
+For players whose photo you want from one of these sites:
 
 1. Install `userscript/fminside-to-pes-face-ai.user.js` in Tampermonkey/Violentmonkey.
-2. Open a player page on fminside.net yourself and click **→ PES Face AI**. Nothing is crawled or searched: the script reads
-   the one page you are on and hands it to your local server (`localhost:8000`).
-3. In the tool open the **FM** tab. The player is matched against your player list by name and club; you confirm (or pick
-   another player) and press *Übernehmen*. The face goes into `faceai.csv`, the converted stats into `faceai_stats.csv`.
-   The photo stays in memory only and is dropped when you confirm; it is never used for training.
-4. In game: **F9** (`faceai.lua`) writes the face. For the stats press **F7** in PlayerDump once per launch (it writes the
-   table address), then **F5** in `faceai_stats.lua`.
+2. Open a player page on the site yourself (the *New World* rows have search links) and click **→ PES Face AI**. Nothing is
+   crawled or searched: the script reads the one page you are on (name, club, birth date, photo; FMInside also the FM
+   attributes) and hands it to your local server (`localhost:8000`).
+3. The tool matches the player against your list. For new-world players an **exact match (equal birth date, nearly equal
+   name)** is built immediately (switch in the *Eingang* tab); anything less certain waits in the *Eingang* tab for your
+   confirmation. The photo is used once and dropped: **it is never stored, shared or used for training**.
+4. New-world faces then need **Mit Build abgleichen** (or *Team bauen*) in the *New World* tab. For FMInside, stats are converted
+   (`pesface/stats.py`) into `faceai_stats.csv`; in game press **F7** in PlayerDump once per launch, then **F5** in
+   `faceai_stats.lua`.
 
-The FM → PES conversion (`pesface/stats.py`) is a simple weighted mapping, not a calibrated converter. The userscript's
-selectors are best guesses for the current FMInside layout; if the site changes it tells you what it could not find.
-Respect the site's terms: it reserves its content against AI training, so photos from it must not go into the training
-folders. `faceai_stats.lua` is experimental: not yet verified in game; every write is read back and logged.
+The selectors are best guesses (the sites block automated access, so they could only be tested against small fixtures:
+`tests/check_userscript.py`); if a page is not understood the toast says what was missing and the console shows what the script
+saw. Some image servers refuse the photo download; the data still arrives and you drop the photo into the *Eingang* by hand.
+Respect each site's terms. FMInside reserves its content against AI training and kicker blocks AI crawlers, so neither is a
+source for the training folders; SoFIFA's player images are EA's game renders, Transfermarkt's are agency photos.
 
 ## Training
 
@@ -114,7 +117,7 @@ def get(record: bytes, pos: int, width: int, bias: int) -> int:
     return ((bits >> pos) & ((1 << width) - 1)) - bias
 ```
 
-Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `tests/check_stats.py` the stat conversion, `tests/check_fingerprint.py` the build fingerprint (Python vs Lua), `tests/check_commons.py` the licence filter.
+Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `tests/check_stats.py` the stat conversion, `tests/check_fingerprint.py` the build fingerprint (Python vs Lua), `tests/check_commons.py` the licence filter, `tests/check_userscript.py` the page scraper (fixtures).
 
 ## Limits (please read)
 

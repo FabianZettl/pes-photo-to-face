@@ -234,20 +234,67 @@ def _to_jpeg(raw):
         raise HTTPException(422, f"Die Daten sind kein lesbares Bild ({len(raw)} Bytes, Anfang: {raw[:24]!r})")
 
 
-def _cands(name, team, dob):
-    """Name/club candidates from the player list, plus new-world players whose birth date equals the one on the FM page."""
+DATE_FORMATS = ("%Y-%m-%d", "%d %B %Y", "%d/%m/%Y", "%d.%m.%Y", "%b %d, %Y", "%B %d, %Y", "%d %b %Y")
+AUTO = {"on": True}   # compute the face right away when the match is exact (birth date equal, name nearly equal)
+
+
+def _iso(dob):
     import datetime
+    for f in DATE_FORMATS:
+        try:
+            return datetime.datetime.strptime(dob.strip().split(" (")[0], f).date().isoformat()
+        except ValueError:
+            continue
+    return None
+
+
+def _cands(name, team, dob):
+    """Name/club candidates from the player list, plus new-world players whose birth date equals the one on the page.
+    A candidate is `exact` when birth date is equal and the name is nearly equal (>= 0.9)."""
+    import difflib
     cands = model.match_players(name, team)
-    try:
-        iso = datetime.datetime.strptime(dob.strip(), "%d %B %Y").date().isoformat()
-    except ValueError:
-        iso = None
+    iso = _iso(dob)
     if iso and nw.available():
         for p in nw.players():
-            if p["born"] == iso and model._tokens(name) and set(model._tokens(name)) & set(model._tokens(p["name"])):
+            if p["born"] == iso and set(model._tokens(name)) & set(model._tokens(p["name"])):
+                r = difflib.SequenceMatcher(None, " ".join(model._tokens(name)), " ".join(model._tokens(p["name"]))).ratio()
                 cands = [c for c in cands if c["id"] != p["id"]]
-                cands.insert(0, {"id": p["id"], "name": p["name"], "teams": [p["club"]], "has_face": True, "score": 1.0})
+                cands.insert(0, {"id": p["id"], "name": p["name"], "teams": [p["club"]], "has_face": True, "score": 1.0,
+                                 "exact": r >= 0.9})
     return cands[:5]
+
+
+def _accept(it, player_id):
+    """Face from the item's photo (+ converted FM stats) for this player. New-world players: values go to the NewLife-id
+    store (Sync); the photo itself is never kept. Returns what the UI shows."""
+    import json
+    warn, n = [], None
+    nwp = nw.by_game_id(player_id) if nw.available() and str(player_id).isdigit() else None
+    if it["image"] is not None:
+        with tempfile.NamedTemporaryFile(suffix=it["ext"]) as t:
+            t.write(it["image"]); t.flush()
+            try:
+                warn = photo_warnings(t.name)
+                if nwp and not nwp["rendered"]:
+                    nw.compute(nwp["nl"], path=t.name)
+                    warn.append("Neue-Welt-Spieler: Gesicht gespeichert, im Tab New World „Mit Build abgleichen“ drücken")
+                    n = 0
+                else:
+                    n = model.queue(player_id, predict_all(t.name))
+            except ValueError as e:
+                raise HTTPException(422, str(e))
+    else:
+        warn = ["Kein Foto: nur die Werte wurden übernommen, kein Gesicht"]
+    if it.get("stats"):
+        f = model.QUEUE.parent / "fm_stats.json"   # raw FM attributes per player id, for a later stat converter
+        store = json.loads(f.read_text()) if f.exists() else {}
+        store[str(player_id)] = {k: it[k] for k in ("name", "team", "nationality", "dob", "stats", "url")}
+        f.write_text(json.dumps(store, ensure_ascii=False))
+    from . import stats
+    conv = stats.convert(it["stats"]) if it.get("stats") else {}
+    if conv:   # kept permanently: the game rebuilds its player table at every start
+        stats.queue(model.QUEUE.parent / "faceai_stats.csv", player_id, conv)
+    return {"queued": str(player_id), "in_queue": n, "warnings": warn, "stats": len(conv)}
 
 
 @app.post("/api/fm/import")
@@ -267,8 +314,20 @@ async def fm_import(request: Request):
     iid = uuid.uuid4().hex[:8]
     INBOX[iid] = {"id": iid, "name": name, "team": team, "nationality": str(d.get("nationality", "")),
                   "dob": str(d.get("dob", "")), "stats": d.get("stats") or {}, "url": str(d.get("url", "")),
+                  "source": str(d.get("source", "fminside")),
                   "ext": kind, "image": raw, "cands": _cands(name, team, str(d.get("dob", "")))}
-    return {"ok": True, "id": iid, "best": INBOX[iid]["cands"][:1]}
+    it = INBOX[iid]
+    best = it["cands"][0] if it["cands"] else None
+    if AUTO["on"] and best and best.get("exact") and raw is not None:
+        nwp = nw.by_game_id(best["id"]) if nw.available() else None
+        if nwp and not nwp["rendered"]:   # only new-world players are built without asking
+            try:
+                _accept(it, best["id"])
+                del INBOX[iid]
+                return {"ok": True, "id": iid, "auto": True, "best": [best]}
+            except HTTPException as e:
+                it["note"] = str(e.detail)   # stays in the inbox with the reason
+    return {"ok": True, "id": iid, "best": it["cands"][:1]}
 
 
 @app.get("/api/fm/inbox")
@@ -296,42 +355,24 @@ def fm_photo(iid: str):
 
 @app.post("/api/fm/accept")
 def fm_accept(item_id: str = Form(...), player_id: str = Form(...)):
-    """Confirm the match: compute the face from the photo, queue it, keep the FM stats for later, drop the photo."""
-    import json
+    """Confirm the match: face from the photo, queue it, keep the stats, drop the photo."""
     it = INBOX.get(item_id)
     if not it or not player_id.isdigit():
         raise HTTPException(422, "Eintrag oder Spieler-ID ungültig")
-    warn, n = [], None
-    nwp = nw.by_game_id(player_id) if nw.available() and player_id.isdigit() else None
-    if nwp and it["image"] is not None and not nwp["rendered"]:
-        nw.save_photo(nwp["nl"], it["image"])
-        try:
-            nw.compute(nwp["nl"])
-        except ValueError as e:
-            raise HTTPException(422, str(e))
-        warn = ["Neue-Welt-Spieler: Gesicht gespeichert, im Tab New World „Mit Build abgleichen“ drücken"]
-        n = 0
-    elif it["image"] is not None:
-        with tempfile.NamedTemporaryFile(suffix=it["ext"]) as t:
-            t.write(it["image"]); t.flush()
-            try:
-                warn = photo_warnings(t.name)
-                vals = predict_all(t.name)
-            except ValueError as e:
-                raise HTTPException(422, str(e))
-        n = model.queue(player_id, vals)
-    else:
-        warn = ["Kein Foto: nur die Werte wurden übernommen, kein Gesicht"]
-    f = model.QUEUE.parent / "fm_stats.json"   # raw FM attributes per player id, for a later stat converter
-    store = json.loads(f.read_text()) if f.exists() else {}
-    store[player_id] = {k: it[k] for k in ("name", "team", "nationality", "dob", "stats", "url")}
-    f.write_text(json.dumps(store, ensure_ascii=False))
-    from . import stats
-    conv = stats.convert(it["stats"]) if it["stats"] else {}
-    if conv:   # kept permanently: the game rebuilds its player table at every start
-        stats.queue(model.QUEUE.parent / "faceai_stats.csv", player_id, conv)
+    out = _accept(it, player_id)
     del INBOX[item_id]
-    return {"queued": player_id, "in_queue": n, "warnings": warn, "stats": len(conv)}
+    return out
+
+
+@app.get("/api/fm/settings")
+def fm_settings():
+    return AUTO
+
+
+@app.post("/api/fm/settings")
+def fm_set_settings(auto: str = Form(...)):
+    AUTO["on"] = auto == "1"
+    return AUTO
 
 
 @app.post("/api/fm/discard")
