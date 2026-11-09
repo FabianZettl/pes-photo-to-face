@@ -1,0 +1,227 @@
+<title>PES Face AI</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#14161a;--mut:#6b7280;--acc:#2563eb;--line:#e5e7eb;--bad:#dc2626;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0b0d10;--card:#14171c;--fg:#eceef2;--mut:#8b93a1;--acc:#60a5fa;--line:#232830;--bad:#f87171;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif;padding:24px 16px}
+main{max-width:1100px;margin:auto;display:grid;gap:20px;grid-template-columns:minmax(300px,440px) minmax(0,1fr);align-items:start}
+@media (max-width:820px){main{grid-template-columns:minmax(0,1fr)}}
+header{grid-column:1/-1;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+h1{margin:0;font-size:22px;letter-spacing:-.02em;margin-right:auto}h1 span{color:var(--mut);font-weight:400}
+.tabs{display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px}
+.tabs button{background:none;color:var(--mut);padding:7px 16px}.tabs button.on{background:var(--acc);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+.col{display:grid;gap:20px;min-width:0}
+#out{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
+@media (max-width:820px){#out{position:static;max-height:none}}
+.drop{aspect-ratio:4/5;max-height:340px;width:100%;border:2px dashed var(--line);border-radius:12px;display:grid;place-items:center;color:var(--mut);text-align:center;cursor:pointer;background-size:cover;background-position:center}
+.drop.over{border-color:var(--acc)}
+select{width:100%;min-width:0}
+input[type=checkbox]{padding:0;width:auto}
+input,button,select{font:inherit;border-radius:10px;border:1px solid var(--line);padding:9px 12px;background:var(--bg);color:var(--fg)}
+button{background:var(--acc);color:#fff;border:0;cursor:pointer}button:disabled{opacity:.4;cursor:default}
+.row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.row input{flex:1;min-width:0}
+.msg{margin-top:10px;color:var(--mut);white-space:pre-wrap}.msg:empty{display:none}.hint{color:var(--mut);font-size:12px;margin-top:6px}.msg.err{color:var(--bad)}
+h3{margin:14px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}h3:first-child{margin-top:0}
+.s{display:grid;grid-template-columns:1fr 36px;gap:4px 10px;align-items:center;padding:3px 0}
+.s b{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.bar{grid-column:1/-1;height:4px;border-radius:2px;background:var(--line);position:relative}.bar i{position:absolute;top:0;bottom:0;background:var(--acc);border-radius:2px}
+.hit{padding:5px 8px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}.hit:hover{background:var(--bg)}.hit span{color:var(--mut);white-space:nowrap}
+.hairsel{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
+pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace,monospace}
+[hidden]{display:none!important}
+</style>
+<main>
+<header>
+  <h1>PES Face AI <span>Foto ↔ Face-Werte</span></h1>
+  <div class="tabs"><button id="t1" class="on">Erkennen</button><button id="t2">Training</button><button id="t3">Haare</button><button id="t4">Bulk</button></div>
+</header>
+
+<div class="col">
+  <div class="card" id="pcard">
+    <h3>Spieler</h3>
+    <input id="find" placeholder="Name oder ID suchen" style="width:100%">
+    <input id="team" list="teams" placeholder="Team (optional, tippen oder wählen)" style="width:100%;margin-top:6px"><datalist id="teams"></datalist>
+    <label style="display:block;margin-top:6px;color:var(--mut);font-size:13px"><input type="checkbox" id="fo" style="padding:0"> nur importierbare (mit Datensatz)</label>
+    <div id="res" style="max-height:200px;overflow:auto;margin-top:6px"></div>
+    <div class="row"><input id="pid" placeholder="Spieler-ID" inputmode="numeric"></div>
+    <div class="msg" id="who"></div>
+  </div>
+
+  <div class="card" id="p1">
+    <div class="drop" id="drop">Foto hierher ziehen<br>oder klicken</div>
+    <input id="file" type="file" accept="image/*" hidden>
+    <h3>Gesamt</h3>
+    <div class="hairsel">
+      <select id="hs" title="Stil"><option value="">Stil</option><option value="1">Normal</option><option value="2">Trocken</option><option value="3">Iro</option><option value="4">Afro</option><option value="5">Dreadlocks</option><option value="6">Geflochten</option><option value="7">Spezial</option></select>
+      <select id="hl" title="Länge"><option value="">Länge</option><option value="5">Lang</option><option value="4">Mittel</option><option value="3">Kurz</option><option value="2">Sehr kurz</option><option value="1">rasiert</option></select>
+      <select id="hc" title="Kräuselung"><option value="">Kräuselung</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
+    </div>
+
+    <h3>Vorne</h3>
+    <div class="hairsel" style="grid-template-columns:repeat(2,1fr);margin-top:0">
+      <select id="hf" title="Vorne Stil"><option value="">Stil</option><option value="1">Hoch</option><option value="2">Hängend</option><option value="3">Zurückgekämmt</option></select>
+      <select id="hp" title="Gescheitelt"><option value="">Scheitel</option><option value="1">Aus</option><option value="2">Links 2</option><option value="3">Links 1</option><option value="4">Mitte</option><option value="5">Rechts 1</option><option value="6">Rechts 2</option></select>
+      <select id="ha" title="Haaransatz"><option value="">Ansatz</option><option value="1">Modell 1</option><option value="2">Modell 2</option><option value="3">Modell 3</option></select>
+      <select id="hz" title="Stirnbreite"><option value="">Stirn</option><option value="1">Eng</option><option value="2">Normal</option><option value="3">Weit</option></select>
+    </div>
+    <h3>Seite/Hinten</h3>
+    <div class="hairsel" style="grid-template-columns:1fr;margin-top:0">
+      <select id="hb" title="Seite/Hinten"><option value="">Seite/Hinten</option><option value="1">Normal</option><option value="2">Weniger Volumen</option><option value="3">Kürzere Seiten</option><option value="4">Kurzgeschnitten</option></select>
+    </div>
+    <div class="hint">Leere Auswahl = Haare der Vorlage bleiben.</div>
+    <div class="row"><button id="dl" disabled>CSV</button><button id="q" disabled>In Queue</button></div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card" id="p2" hidden>
+    <div class="drop" id="tdrop">Trainingsfoto hierher ziehen<br>oder klicken</div>
+    <input id="tfile" type="file" accept="image/*" hidden>
+    <div class="row"><button id="tsave" disabled>Foto speichern</button><button id="trun">Training starten</button></div>
+    <div class="msg" id="tmsg"></div>
+    <pre id="tlog"></pre>
+  </div>
+  <div class="card" id="p3" hidden>
+    <div class="drop" id="hdrop">Haar-Foto hierher ziehen<br>oder klicken</div>
+    <input id="hfile" type="file" accept="image/*" hidden>
+    <div class="msg">So würdest du die Haare im Spiel einstellen (vorbelegt mit dem Vorschlag des Tools):</div>
+    <h3>Gesamt</h3>
+    <div class="hairsel">
+      <select id="ths" title="Stil"><option value="1">Normal</option><option value="2">Trocken</option><option value="3">Iro</option><option value="4">Afro</option><option value="5">Dreadlocks</option><option value="6">Geflochten</option><option value="7">Spezial</option></select>
+      <select id="thl" title="Länge"><option value="5">Lang</option><option value="4">Mittel</option><option value="3">Kurz</option><option value="2">Sehr kurz</option><option value="1">rasiert</option></select>
+      <select id="thc" title="Kräuselung"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
+    </div>
+
+    <h3>Vorne</h3>
+    <div class="hairsel" style="grid-template-columns:repeat(2,1fr);margin-top:0">
+      <select id="tf" title="Vorne Stil"><option value="">Stil</option><option value="1">Hoch</option><option value="2">Hängend</option><option value="3">Zurückgekämmt</option></select>
+      <select id="tp" title="Gescheitelt"><option value="">Scheitel</option><option value="1">Aus</option><option value="2">Links 2</option><option value="3">Links 1</option><option value="4">Mitte</option><option value="5">Rechts 1</option><option value="6">Rechts 2</option></select>
+      <select id="ta" title="Haaransatz"><option value="">Ansatz</option><option value="1">Modell 1</option><option value="2">Modell 2</option><option value="3">Modell 3</option></select>
+      <select id="tz" title="Stirnbreite"><option value="">Stirn</option><option value="1">Eng</option><option value="2">Normal</option><option value="3">Weit</option></select>
+    </div>
+    <h3>Seite/Hinten</h3>
+    <div class="hairsel" style="grid-template-columns:1fr;margin-top:0">
+      <select id="tb" title="Seite/Hinten"><option value="">Seite/Hinten</option><option value="1">Normal</option><option value="2">Weniger Volumen</option><option value="3">Kürzere Seiten</option><option value="4">Kurzgeschnitten</option></select>
+    </div>
+    <div class="row"><button id="hsave" disabled>Foto speichern</button><button id="hrun">Training starten</button></div>
+    <div class="msg" id="hmsg"></div>
+    <pre id="hlog"></pre>
+  </div>
+  <div class="card" id="p4" hidden>
+    <h3>Ordner mit Spielerfotos</h3>
+    <div class="hint" style="margin:0 0 8px">Dateiname = Spieler-ID, z. B. 133543.jpg. Das Tool berechnet jedes Foto und legt es in die Queue-CSV; im Spiel übernimmt F9 alle auf einmal.</div>
+    <input id="bfolder" placeholder="Ordnerpfad mit den Fotos (Dateiname = Spieler-ID)" style="width:100%">
+    <div class="row"><button id="bgo">Alle verarbeiten</button></div>
+    <div class="bar" style="margin-top:12px"><i id="bbar" style="left:0;width:0"></i></div>
+    <div class="msg" id="bmsg"></div>
+  </div>
+</div>
+
+<div class="card" id="out"><span style="color:var(--mut)">Noch kein Ergebnis.</span></div>
+</main>
+
+<script>
+const G={Augen:/Eye|Iris|Pupil|Eyelid/,Brauen:/Brow|Temple/,Nase:/Nose|Nostril|Laughter/,Mund:/Lip|Mouth/,'Haare · Vorne':/^Hair(Front|Parting|Hairline|Forehead)/,'Haare · Seite/Hinten':/^HairBack/,'Haare · Gesamt':/^Hair/,Kinn:/Chin|Jaw|Cheek|Neck/,Ohren:/^Ear/,Bart:/Facial|Thickness/,Kopf:/^(Head|Face|Skin|Forehead)/};
+const $=id=>document.getElementById(id);let file,tfile,hfile,tab=1,bpoll;
+const say=(el,t,e)=>{$(el).textContent=t;$(el).className='msg'+(e?' err':'')};
+const post=(url,f,extra)=>{const d=new FormData();d.append('photo',f);for(const k in extra)d.append(k,extra[k]);return fetch(url,{method:'POST',body:d})};
+
+function render(values,ranges,title){
+  const out=$('out');out.replaceChildren();
+  if(title){const t=document.createElement('div');t.style.cssText='color:var(--mut);margin-bottom:8px';t.textContent=title;out.append(t)}
+  const groups={};for(const k in values){const g=Object.keys(G).find(g=>G[g].test(k))||'Sonstige';(groups[g]??=[]).push(k)}
+  for(const g in groups){const h=document.createElement('h3');h.textContent=g;out.append(h);
+    for(const k of groups[g]){const [lo,hi]=ranges[k]||[0,1],v=values[k],p=x=>(x-lo)/(hi-lo||1)*100;
+      const d=document.createElement('div');d.className='s';
+      const a=document.createElement('span');a.textContent=k;const b=document.createElement('b');b.textContent=v;
+      const bar=document.createElement('div');bar.className='bar';const i=document.createElement('i');
+      i.style.cssText=lo<0?`left:${Math.min(p(0),p(v))}%;width:${Math.abs(p(v)-p(0))}%`:`left:0;width:${p(v)}%`;
+      bar.append(i);d.append(a,b,bar);out.append(d)}}
+}
+
+// ---- tabs
+function setTab(n){tab=n;$('t1').className=n==1?'on':'';$('t2').className=n==2?'on':'';$('t3').className=n==3?'on':'';$('t4').className=n==4?'on':'';$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('p3').hidden=n!=3;$('p4').hidden=n!=4;$('pcard').hidden=n==3||n==4;
+  $('out').replaceChildren(Object.assign(document.createElement('span'),{textContent:n==1?'Noch kein Ergebnis.':n==2?'Wähle einen Spieler: hier erscheinen seine aktuellen Spieldaten.':n==3?'Foto laden: hier erscheint der Vorschlag des Tools für die Haare.':'Hier erscheint das Ergebnis des Durchlaufs.',style:'color:var(--mut)'}));
+  if(n==2)loadTruth()}
+$('t1').onclick=()=>setTab(1);$('t2').onclick=()=>setTab(2);$('t3').onclick=()=>{setTab(3);hairCount()};$('t4').onclick=()=>setTab(4);
+
+// ---- player search (shared)
+let ft;const search=()=>{clearTimeout(ft);ft=setTimeout(async()=>{
+  const q=$('find').value.trim(),tm=$('team').value.trim();if(!q&&!tm){$('res').replaceChildren();return}
+  const r=await fetch('/api/players?q='+encodeURIComponent(q)+'&face_only='+$('fo').checked+'&team='+encodeURIComponent(tm));if(!r.ok)return;
+  $('res').replaceChildren(...(await r.json()).map(p=>{const d=document.createElement('div');d.className='hit';
+    d.textContent=p.name+(p.teams.length?' · '+p.teams.join(', '):'');const s=document.createElement('span');s.textContent=p.id+(p.has_face?'':' · kein Datensatz');d.append(s);
+    d.onclick=()=>{$('pid').value=p.id;$('find').value=p.name;$('who').textContent=p.name+' ('+p.id+')';if(tab==2)loadTruth()};return d}))},150)};
+$('find').oninput=$('team').oninput=search;$('fo').onchange=search;
+fetch('/api/teams').then(r=>r.json()).then(l=>$('teams').append(...l.map(t=>new Option(t))));
+$('pid').onchange=()=>{if(tab==2)loadTruth()};
+
+function dropzone(zone,input,onfile){
+  zone.onclick=()=>input.click();input.onchange=e=>onfile(e.target.files[0]);
+  zone.ondragover=e=>{e.preventDefault();zone.classList.add('over')};zone.ondragleave=()=>zone.classList.remove('over');
+  zone.ondrop=e=>{e.preventDefault();zone.classList.remove('over');onfile(e.dataTransfer.files[0])};
+}
+const idFromName=f=>(f.name.match(/^\d+/)||[''])[0];
+const show=(zone,f)=>{zone.style.backgroundImage=`url(${URL.createObjectURL(f)})`;zone.textContent=''};
+
+// ---- tab 1: recognise
+dropzone($('drop'),$('file'),async f=>{
+  if(!f)return;file=f;show($('drop'),f);if(!$('pid').value)$('pid').value=idFromName(f);
+  say('msg','Analysiere…');$('dl').disabled=$('q').disabled=true;
+  const r=await post('/api/predict',f);
+  if(!r.ok){say('msg',(await r.json()).detail||'Fehler',1);return}
+  const {values,ranges,warnings}=await r.json();say('msg',(warnings||[]).join(' · '),!!(warnings||[]).length);
+  $('dl').disabled=$('q').disabled=false;render(values,ranges)});
+$('q').onclick=async()=>{const r=await post('/api/queue',file,{player_id:$('pid').value,hair_style:$('hs').value,hair_length:$('hl').value,hair_curl:$('hc').value,hair_front:$('hf').value,hair_parting:$('hp').value,hair_hairline:$('ha').value,hair_forehead:$('hz').value,hair_back:$('hb').value}),j=await r.json();
+  say('msg',r.ok?`Spieler ${j.queued} in der Queue (${j.in_queue} gesamt)`:(j.detail||'Fehler'),!r.ok)};
+$('dl').onclick=async()=>{const id=$('pid').value||'0',r=await post('/api/export.csv',file,{player_id:id});
+  const a=document.createElement('a');a.href=URL.createObjectURL(await r.blob());a.download=`face_${id}.csv`;a.click()};
+
+// ---- tab 2: training
+async function loadTruth(){
+  const id=$('pid').value;if(!id){return}
+  const r=await fetch('/api/truth?player_id='+id);
+  if(!r.ok){say('tmsg',(await r.json()).detail,1);return}
+  const j=await r.json();say('tmsg','Spieldaten aus dem Dump vom '+j.dump+' (im Spiel F8 drücken, um sie zu aktualisieren)');
+  render(j.values,j.ranges,'Aktuelle Spieldaten · '+($('who').textContent||id))}
+dropzone($('tdrop'),$('tfile'),f=>{if(!f)return;tfile=f;show($('tdrop'),f);if(!$('pid').value)$('pid').value=idFromName(f);$('tsave').disabled=false;if($('pid').value)loadTruth()});
+$('tsave').onclick=async()=>{const id=$('pid').value;if(!id){say('tmsg','Spieler-ID fehlt',1);return}
+  const r=await post('/api/train/photo',tfile,{player_id:id}),j=await r.json();
+  say('tmsg',r.ok?`Gespeichert als ${j.saved} (${j.count} Trainingsfotos)`+(j.warnings.length?'\n'+j.warnings.join('\n'):''):(j.detail||'Fehler'),!r.ok||j.warnings?.length)};
+$('trun').onclick=async()=>{$('trun').disabled=true;say('tmsg','Training läuft… (Gesichter und Haare, das kann ein paar Minuten dauern)');$('tlog').textContent='';
+  const r=await fetch('/api/train/run',{method:'POST'});$('trun').disabled=false;
+  const j=await r.json();say('tmsg',r.ok?'Fertig':'Fehler',!r.ok);$('tlog').textContent=j.log||''};
+
+// ---- tab 3: hair trainer (labels chosen by hand, no player needed)
+const hairCount=async()=>{const j=await (await fetch('/api/hair/list')).json();
+  if(tab==3)say('hmsg',`${j.total} beschriftete Haar-Fotos`+(j.total<40?' (ab 40 wird das gelernte Modell benutzt)':''))};
+dropzone($('hdrop'),$('hfile'),async f=>{
+  if(!f)return;hfile=f;show($('hdrop'),f);$('hsave').disabled=true;say('hmsg','Analysiere…');
+  const r=await post('/api/predict',f);
+  if(!r.ok){say('hmsg',(await r.json()).detail||'Fehler',1);return}
+  const {values,ranges,warnings}=await r.json();
+  $('ths').value=values.HairStyle;$('thl').value=values.HairLength;$('thc').value=values.HairCurl;
+  $('tf').value=values.HairFront??'';$('tp').value=values.HairParting??'';$('ta').value=values.HairHairline??'';$('tz').value=values.HairForehead??'';$('tb').value=values.HairBack??'';
+  render(Object.fromEntries(Object.entries(values).filter(([k])=>k.startsWith('Hair'))),ranges,'Vorschlag des Tools');
+  say('hmsg',(warnings||[]).join(' · '),!!(warnings||[]).length);$('hsave').disabled=false});
+$('hsave').onclick=async()=>{const r=await post('/api/hair/photo',hfile,{style:$('ths').value,length:$('thl').value,curl:$('thc').value,front:$('tf').value,parting:$('tp').value,hairline:$('ta').value,forehead:$('tz').value,back:$('tb').value}),j=await r.json();
+  say('hmsg',r.ok?`Gespeichert (${j.total} beschriftete Haar-Fotos)`+(j.warnings.length?'\n'+j.warnings.join('\n'):''):(j.detail||'Fehler'),!r.ok||j.warnings?.length);
+  if(r.ok){$('hsave').disabled=true;$('hdrop').style.backgroundImage='';$('hdrop').textContent='Nächstes Foto'}};
+$('hrun').onclick=async()=>{$('hrun').disabled=true;say('hmsg','Training läuft…');$('hlog').textContent='';
+  const r=await fetch('/api/train/run',{method:'POST'}),j=await r.json();$('hrun').disabled=false;say('hmsg',r.ok?'Fertig':'Fehler',!r.ok);$('hlog').textContent=j.log||''};
+
+
+// ---- tab 4: bulk
+const ICON={ok:'✔',warn:'⚠',skip:'✖'};
+async function bulkPoll(){
+  const j=await (await fetch('/api/bulk/status')).json();
+  $('bbar').style.width=(j.total?100*j.done/j.total:0)+'%';
+  say('bmsg',`${j.done} von ${j.total} verarbeitet`+(j.running?' …':`. Queue: ${j.queue}`));
+  if(tab==4){const out=$('out');out.replaceChildren();
+    for(const it of j.items.slice().reverse()){const d=document.createElement('div');d.className='hit';d.style.cursor='default';
+      d.textContent=`${ICON[it.status]} ${it.id}${it.name?' · '+it.name:''}`;const s=document.createElement('span');s.textContent=it.msg||(it.status=='ok'?'in der Queue':'');s.style.whiteSpace='normal';s.style.textAlign='right';d.append(s);out.append(d)}}
+  if(j.running)bpoll=setTimeout(bulkPoll,1500)}
+$('bgo').onclick=async()=>{const d=new FormData();d.append('folder',$('bfolder').value);
+  const r=await fetch('/api/bulk/start',{method:'POST',body:d}),j=await r.json();
+  if(!r.ok){say('bmsg',j.detail||'Fehler',1);return}
+  clearTimeout(bpoll);bulkPoll()};
+</script>

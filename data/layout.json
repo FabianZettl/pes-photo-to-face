@@ -1,0 +1,618 @@
+{
+ "SkinColour": {
+  "pos": 360,
+  "w": 3,
+  "bias": 0,
+  "agree": 0.851,
+  "lo": 1,
+  "hi": 6
+ },
+ "HeadLength": {
+  "pos": 140,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.437,
+  "lo": -7,
+  "hi": 7
+ },
+ "HeadWidth": {
+  "pos": 144,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.463,
+  "lo": -7,
+  "hi": 7
+ },
+ "FaceHeight": {
+  "pos": 412,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.954,
+  "lo": -7,
+  "hi": 7
+ },
+ "FaceSize": {
+  "pos": 408,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.957,
+  "lo": -7,
+  "hi": 7
+ },
+ "UpperEyelidType": {
+  "pos": 379,
+  "w": 3,
+  "bias": 0,
+  "agree": 0.641,
+  "lo": 1,
+  "hi": 7
+ },
+ "BottomEyelidType": {
+  "pos": 384,
+  "w": 3,
+  "bias": -1,
+  "agree": 0.95,
+  "lo": 1,
+  "hi": 7
+ },
+ "EyeHeight": {
+  "pos": 288,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.96,
+  "lo": -7,
+  "hi": 7
+ },
+ "HorizontalEyePosition": {
+  "pos": 284,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.955,
+  "lo": -7,
+  "hi": 7
+ },
+ "IrisColour": {
+  "pos": 512,
+  "w": 4,
+  "bias": -1,
+  "agree": 0.904,
+  "lo": 1,
+  "hi": 11
+ },
+ "PupilSize": {
+  "pos": 236,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.971,
+  "lo": -7,
+  "hi": 7
+ },
+ "UpperEyelidHt.(Inner)": {
+  "pos": 264,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.949,
+  "lo": -7,
+  "hi": 7
+ },
+ "UpperEyelidWd.(Inner)": {
+  "pos": 260,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.946,
+  "lo": -7,
+  "hi": 7
+ },
+ "UpperEyelidHt.(Outer)": {
+  "pos": 272,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.949,
+  "lo": -7,
+  "hi": 7
+ },
+ "UpperEyelidWd.(Outer)": {
+  "pos": 268,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.949,
+  "lo": -7,
+  "hi": 7
+ },
+ "InnerEyeHeight": {
+  "pos": 248,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.953,
+  "lo": -7,
+  "hi": 7
+ },
+ "InnerEyePosition": {
+  "pos": 244,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.948,
+  "lo": -7,
+  "hi": 7
+ },
+ "EyeCornerHeight": {
+  "pos": 256,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.954,
+  "lo": -7,
+  "hi": 7
+ },
+ "OuterEyePosition": {
+  "pos": 252,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.949,
+  "lo": -7,
+  "hi": 7
+ },
+ "BottomEyelidHeight": {
+  "pos": 280,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.952,
+  "lo": -7,
+  "hi": 7
+ },
+ "Forehead": {
+  "pos": 368,
+  "w": 3,
+  "bias": -1,
+  "agree": 0.85,
+  "lo": 1,
+  "hi": 7
+ },
+ "EyebrowType": {
+  "pos": 400,
+  "w": 3,
+  "bias": -1,
+  "agree": 0.966,
+  "lo": 1,
+  "hi": 8
+ },
+ "EyebrowThickness": {
+  "pos": 478,
+  "w": 2,
+  "bias": 0,
+  "agree": 0.972,
+  "lo": 0,
+  "hi": 2
+ },
+ "EyebrowStyle": {
+  "pos": 462,
+  "w": 2,
+  "bias": 0,
+  "agree": 0.965,
+  "lo": 0,
+  "hi": 2
+ },
+ "EyebrowDensity": {
+  "pos": 470,
+  "w": 2,
+  "bias": 0,
+  "agree": 0.97,
+  "lo": 0,
+  "hi": 3
+ },
+ "InnerEyebrowHeight": {
+  "pos": 216,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.955,
+  "lo": -7,
+  "hi": 7
+ },
+ "BrowWidth": {
+  "pos": 212,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.955,
+  "lo": -7,
+  "hi": 7
+ },
+ "OuterEdyebrowHeight": {
+  "pos": 228,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.954,
+  "lo": -7,
+  "hi": 7
+ },
+ "TempleWidth": {
+  "pos": 224,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.954,
+  "lo": -7,
+  "hi": 7
+ },
+ "NoseType": {
+  "pos": 416,
+  "w": 3,
+  "bias": -1,
+  "agree": 0.968,
+  "lo": 1,
+  "hi": 8
+ },
+ "LaughterLines": {
+  "pos": 376,
+  "w": 3,
+  "bias": -1,
+  "agree": 0.796,
+  "lo": 1,
+  "hi": 5
+ },
+ "NoseHeight": {
+  "pos": 292,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.965,
+  "lo": -7,
+  "hi": 7
+ },
+ "NostrilWidth": {
+  "pos": 300,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.959,
+  "lo": -7,
+  "hi": 7
+ },
+ "NoseWidth": {
+  "pos": 312,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.957,
+  "lo": -7,
+  "hi": 7
+ },
+ "UpperLipType": {
+  "pos": 424,
+  "w": 3,
+  "bias": -1,
+  "agree": 0.973,
+  "lo": 1,
+  "hi": 5
+ },
+ "LowerLipType": {
+  "pos": 427,
+  "w": 3,
+  "bias": -1,
+  "agree": 0.982,
+  "lo": 1,
+  "hi": 5
+ },
+ "MouthPosition": {
+  "pos": 320,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.952,
+  "lo": -7,
+  "hi": 7
+ },
+ "LipSize": {
+  "pos": 328,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.959,
+  "lo": -7,
+  "hi": 7
+ },
+ "LipWidth": {
+  "pos": 340,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.965,
+  "lo": -7,
+  "hi": 7
+ },
+ "MouthCornerHeight": {
+  "pos": 336,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.974,
+  "lo": -7,
+  "hi": 7
+ },
+ "FacialHairType": {
+  "pos": 371,
+  "w": 5,
+  "bias": 0,
+  "agree": 0.956,
+  "lo": 0,
+  "hi": 19
+ },
+ "Thickness": {
+  "pos": 510,
+  "w": 2,
+  "bias": 0,
+  "agree": 0.972,
+  "lo": 0,
+  "hi": 3
+ },
+ "CheekType": {
+  "pos": 363,
+  "w": 3,
+  "bias": -1,
+  "agree": 0.967,
+  "lo": 1,
+  "hi": 6
+ },
+ "NeckLineType": {
+  "pos": 405,
+  "w": 2,
+  "bias": -1,
+  "agree": 0.872,
+  "lo": 1,
+  "hi": 4
+ },
+ "Cheekbones": {
+  "pos": 192,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.96,
+  "lo": -7,
+  "hi": 7
+ },
+ "ChinHeight": {
+  "pos": 352,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.947,
+  "lo": -7,
+  "hi": 7
+ },
+ "ChinWidth": {
+  "pos": 348,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.954,
+  "lo": -7,
+  "hi": 7
+ },
+ "JawHeight": {
+  "pos": 184,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.951,
+  "lo": -7,
+  "hi": 7
+ },
+ "Jawline": {
+  "pos": 180,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.948,
+  "lo": -7,
+  "hi": 7
+ },
+ "EarLength": {
+  "pos": 388,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.967,
+  "lo": -7,
+  "hi": 7
+ },
+ "EarWidth": {
+  "pos": 392,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.963,
+  "lo": -7,
+  "hi": 7
+ },
+ "EarAngle": {
+  "pos": 396,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.963,
+  "lo": -7,
+  "hi": 7
+ },
+ "HeadDepth": {
+  "pos": 148,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.493,
+  "lo": -7,
+  "hi": 7
+ },
+ "EyeDepth": {
+  "pos": 240,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.948,
+  "lo": -7,
+  "hi": 7
+ },
+ "EyebrowDepth": {
+  "pos": 232,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.953,
+  "lo": -7,
+  "hi": 7
+ },
+ "NoseTipDepth": {
+  "pos": 296,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.95,
+  "lo": -7,
+  "hi": 7
+ },
+ "NoseDepth": {
+  "pos": 308,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.95,
+  "lo": -7,
+  "hi": 7
+ },
+ "MouthDepth": {
+  "pos": 324,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.962,
+  "lo": -5,
+  "hi": 7
+ },
+ "ChinDepth": {
+  "pos": 356,
+  "w": 4,
+  "bias": 7,
+  "agree": 0.948,
+  "lo": -7,
+  "hi": 7
+ },
+ "EyebrowColourR": {
+  "pos": 456,
+  "w": 6,
+  "bias": 0,
+  "agree": 0.976,
+  "lo": 0,
+  "hi": 63
+ },
+ "EyebrowColourG": {
+  "pos": 464,
+  "w": 6,
+  "bias": 0,
+  "agree": 0.976,
+  "lo": 0,
+  "hi": 63
+ },
+ "EyebrowColourB": {
+  "pos": 472,
+  "w": 6,
+  "bias": 0,
+  "agree": 0.984,
+  "lo": 0,
+  "hi": 63
+ },
+ "FacialHairColourR": {
+  "pos": 492,
+  "w": 6,
+  "bias": 0,
+  "agree": 0.979,
+  "lo": 0,
+  "hi": 63
+ },
+ "FacialHairColourG": {
+  "pos": 498,
+  "w": 6,
+  "bias": 0,
+  "agree": 0.979,
+  "lo": 0,
+  "hi": 63
+ },
+ "FacialHairColourB": {
+  "pos": 504,
+  "w": 6,
+  "bias": 0,
+  "agree": 0.988,
+  "lo": 0,
+  "hi": 63
+ },
+ "HairStyle": {
+  "pos": 448,
+  "w": 3,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 0,
+  "hi": 7
+ },
+ "HairLength": {
+  "pos": 480,
+  "w": 3,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 0,
+  "hi": 5
+ },
+ "HairCurl": {
+  "pos": 483,
+  "w": 3,
+  "bias": 1,
+  "agree": 1.0,
+  "lo": 0,
+  "hi": 6
+ },
+ "HairColourR": {
+  "pos": 430,
+  "w": 6,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 0,
+  "hi": 63
+ },
+ "HairColourG": {
+  "pos": 436,
+  "w": 6,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 0,
+  "hi": 63
+ },
+ "HairColourB": {
+  "pos": 442,
+  "w": 6,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 0,
+  "hi": 63
+ },
+ "HairColourType": {
+  "pos": 524,
+  "w": 3,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 0,
+  "hi": 7
+ },
+ "HairFront": {
+  "pos": 528,
+  "w": 2,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 1,
+  "hi": 3
+ },
+ "HairParting": {
+  "pos": 531,
+  "w": 3,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 1,
+  "hi": 6
+ },
+ "HairHairline": {
+  "pos": 537,
+  "w": 2,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 1,
+  "hi": 3
+ },
+ "HairForehead": {
+  "pos": 540,
+  "w": 2,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 1,
+  "hi": 3
+ },
+ "HairBack": {
+  "pos": 534,
+  "w": 3,
+  "bias": 0,
+  "agree": 1.0,
+  "lo": 1,
+  "hi": 4
+ }
+}

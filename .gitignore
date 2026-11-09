@@ -1,0 +1,16 @@
+# nothing from the game, nothing personal, nothing we may not redistribute
+.venv/
+__pycache__/
+*.pyc
+*.pkl
+*.bin
+*.tflite
+data/*
+!data/layout.json
+!data/hair_colour_cal.json
+faceai/
+training/
+training_hair/
+bulk/
+output/
+training_wunschliste.csv

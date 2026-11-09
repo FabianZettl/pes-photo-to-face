@@ -1,0 +1,13 @@
+# Python 3.11 (TensorFlow, which DeepFace needs, has no wheels for newer versions)
+deepface
+tf-keras
+scikit-learn
+numpy
+fastapi
+uvicorn
+python-multipart
+mediapipe
+opencv-python-headless
+pillow
+torch          # CPU build is enough: pip install torch --index-url https://download.pytorch.org/whl/cpu
+transformers
