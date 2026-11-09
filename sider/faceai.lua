@@ -150,8 +150,8 @@ do
   end
 end
 
-local function slurp(path)
-  local f = io.open(ctx_ref.sider_dir .. path, "r")
+local function slurp(path)   -- binary: the text mode of Windows drops the CR of CRLF files, which changes the fingerprint
+  local f = io.open(ctx_ref.sider_dir .. path, "rb")
   if not f then return "" end
   local t = f:read("*a"); f:close()
   return t

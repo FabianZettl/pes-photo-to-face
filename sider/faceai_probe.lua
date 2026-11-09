@@ -15,7 +15,8 @@ local rd = function(a, n) local ok, r = true, nil; if pcall then ok, r = pcall(m
 do
   local F = ffi   -- global only with luajit.ext.enabled (no rawget in Sider Lua)
   if F then
-    local ok0 = pcall and pcall(F.cdef, [[
+    local pc = pcall or function(f, ...) return true, f(...) end   -- Sider has no real pcall
+    pc(F.cdef, [[
       void* FP_GetCurrentProcess(void) __asm__("GetCurrentProcess");
       int FP_ReadProcessMemory(void* h, const void* addr, void* buf, size_t n, size_t* got) __asm__("ReadProcessMemory");
     ]])
