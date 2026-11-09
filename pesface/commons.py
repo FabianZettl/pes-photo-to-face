@@ -9,6 +9,7 @@ import json
 import re
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -28,7 +29,13 @@ def _get(url, accept=None):
     h = {"User-Agent": UA}
     if accept:
         h["Accept"] = accept
-    return urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=80)
+    for attempt in range(4):   # Wikidata's query service now and then answers 429/5xx: wait and try again
+        try:
+            return urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=80)
+        except urllib.error.HTTPError as e:
+            if e.code not in (429, 500, 502, 503, 504) or attempt == 3:
+                raise
+            time.sleep(float(e.headers.get("Retry-After") or 0) or 4 * 3 ** attempt)
 
 
 def _fold(s):
@@ -75,7 +82,7 @@ def _imageinfo(files, width):
     return out
 
 
-def check(players, width=240):
+def check(players, width=240, min_ratio=0.85):
     """players: list of {nl, name, born}. -> {nl: candidate} for the ones with an offered (free, big enough) photo.
     Metadata only: no image is downloaded."""
     wd = _wikidata(sorted({p["born"] for p in players}))
@@ -86,7 +93,7 @@ def check(players, width=240):
             r = difflib.SequenceMatcher(None, _fold(p["name"]), _fold(label)).ratio()
             if img and r > best[0]:
                 best = (r, img)
-        if best[0] >= 0.85:
+        if best[0] >= min_ratio:
             pick[p["nl"]] = best[1].replace(" ", "_")
     info = _imageinfo(sorted(set(pick.values())), width) if pick else {}
     out = {}
@@ -97,11 +104,8 @@ def check(players, width=240):
     return out
 
 
-def fetch(nl, name, born):
-    """Download the offered photo of ONE player (called when the user confirms) and keep its credit."""
-    cand = check([{"nl": nl, "name": name, "born": born}], width=1000).get(nl)
-    if not cand:
-        raise ValueError("kein freies Commons-Foto für diesen Spieler")
+def save_candidate(nl, cand):
+    """Download the (already checked) candidate photo of ONE player and keep its credit."""
     raw = _get(cand["thumb"]).read()
     from .server import _to_jpeg
     nw.save_photo(nl, _to_jpeg(raw))
@@ -109,6 +113,14 @@ def fetch(nl, name, born):
     credits[nl] = {k: cand[k] for k in ("author", "license", "page", "file")}
     CREDITS.write_text(json.dumps(credits, ensure_ascii=False))
     return credits[nl]
+
+
+def fetch(nl, name, born):
+    """Download the offered photo of ONE player (called when the user confirms)."""
+    cand = check([{"nl": nl, "name": name, "born": born}], width=1000).get(nl)
+    if not cand:
+        raise ValueError("kein freies Commons-Foto für diesen Spieler")
+    return save_candidate(nl, cand)
 
 
 def credit(nl):

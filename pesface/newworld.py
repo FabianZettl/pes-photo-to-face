@@ -154,13 +154,15 @@ def _credit(nl):
     return json.loads(f.read_text()).get(nl) if f.exists() else None
 
 
-def listing(q="", state="", limit=200):
+def listing(q="", state="", limit=200, club=""):
     """Rows for the UI, strongest players first. state: '' | 'nophoto' | 'photo' | 'done'."""
     st = _store()
     from .model import _fold
     q = _fold(q).split()   # accent-insensitive: 'aydogdu' finds 'Aydoğdu'
     rows = []
     for p in players():
+        if club and p["club"] != club:
+            continue
         has_photo = photo_file(p["nl"]) is not None
         s = "rendered" if p["rendered"] else "done" if p["nl"] in st else "photo" if has_photo else "nophoto"
         if not state and s == "rendered":
@@ -172,6 +174,23 @@ def listing(q="", state="", limit=200):
             rows.append({**p, "state": s, "credit": _credit(p["nl"])})
     rows.sort(key=lambda r: -(r["overall"] or 0))
     return rows[:limit], len(rows)
+
+
+def clubs():
+    """[{club, total, need}] sorted by name; need = players without a rendered face and without a computed face."""
+    st = _store()
+    out = {}
+    for p in players():
+        c = out.setdefault(p["club"], {"club": p["club"], "total": 0, "need": 0})
+        c["total"] += 1
+        c["need"] += (not p["rendered"]) and p["nl"] not in st
+    return sorted(out.values(), key=lambda c: c["club"].lower())
+
+
+def needs_build(club):
+    """Players of this club that still need a face built."""
+    st = _store()
+    return [p for p in players() if p["club"] == club and not p["rendered"] and p["nl"] not in st]
 
 
 def summary():

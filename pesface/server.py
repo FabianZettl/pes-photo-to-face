@@ -356,9 +356,9 @@ def nw_summary():
 
 
 @app.get("/api/newworld/list")
-def nw_list(q: str = "", state: str = "", limit: int = 100):
+def nw_list(q: str = "", state: str = "", limit: int = 100, club: str = ""):
     _nw_need()
-    rows, total = nw.listing(q, state, limit)
+    rows, total = nw.listing(q, state, limit, club)
     return {"rows": rows, "total": total}
 
 
@@ -447,6 +447,90 @@ def nw_commons_fetch(nl: str = Form(...)):
         raise HTTPException(422, str(e))
     except Exception as e:
         raise HTTPException(502, f"Wikimedia nicht erreichbar: {e}")
+
+
+@app.get("/api/newworld/clubs")
+def nw_clubs():
+    _nw_need()
+    return nw.clubs()
+
+
+@app.post("/api/newworld/team/check")
+def nw_team_check(club: str = Form(...)):
+    """Who of this club needs a face, who already has a photo, for whom Commons offers a free one. Metadata only."""
+    from . import commons
+    _nw_need()
+    todo = nw.needs_build(club)
+    nophoto = [p for p in todo if not nw.photo_file(p["nl"])]
+    try:
+        offers = commons.check(nophoto, min_ratio=0.9) if nophoto else {}
+    except Exception as e:
+        raise HTTPException(502, f"Wikimedia nicht erreichbar: {e}")
+    return {"club": club, "need": len(todo), "have_photo": len(todo) - len(nophoto), "offers": len(offers),
+            "players": [{"name": p["name"], "born": p["born"], "overall": p["overall"],
+                         "status": "Foto vorhanden" if nw.photo_file(p["nl"]) else
+                         f"Commons: {offers[p['nl']]['author']} · {offers[p['nl']]['license']}" if p["nl"] in offers else "kein freies Foto gefunden"}
+                        for p in sorted(todo, key=lambda p: -(p["overall"] or 0))]}
+
+
+TEAM = {"running": False, "phase": "", "club": "", "total": 0, "done": 0, "items": [], "errors": [], "result": None}
+
+
+def _team_run(club):
+    from . import commons
+    try:
+        todo = nw.needs_build(club)
+        TEAM.update(total=len(todo), done=0, items=[{"name": p["name"], "status": "wartet"} for p in todo], errors=[])
+        row = {p["nl"]: i for i, p in enumerate(todo)}
+        nophoto = [p for p in todo if not nw.photo_file(p["nl"])]
+        TEAM["phase"] = "Suche freie Fotos auf Wikimedia Commons"
+        offers = commons.check(nophoto, width=1000, min_ratio=0.9) if nophoto else {}
+        for p in todo:
+            i = row[p["nl"]]
+            try:
+                if p["nl"] in offers:
+                    TEAM["phase"] = f"Lade Foto: {p['name']}"
+                    commons.save_candidate(p["nl"], offers[p["nl"]])
+                    TEAM["items"][i]["status"] = "Foto geladen"
+                elif nw.photo_file(p["nl"]):
+                    TEAM["items"][i]["status"] = "Foto vorhanden"
+                else:
+                    TEAM["items"][i]["status"] = "kein freies Foto gefunden"
+                    continue
+                TEAM["phase"] = f"Berechne Gesicht: {p['name']}"
+                nw.compute(p["nl"])
+                TEAM["items"][i]["status"] += " · Gesicht berechnet"
+            except Exception as e:   # one player must not stop the team
+                TEAM["items"][i]["status"] = f"Fehler: {e}"
+                TEAM["errors"].append(f"{p['name']}: {e}")
+            TEAM["done"] += 1
+        TEAM["done"] = TEAM["total"]
+        TEAM["phase"] = "Gleiche mit dem Build ab"
+        TEAM["result"] = nw.sync()
+        TEAM["phase"] = "Fertig"
+    except Exception as e:
+        TEAM["errors"].append(str(e))
+        TEAM["phase"] = "Abgebrochen"
+    TEAM["running"] = False
+
+
+@app.post("/api/newworld/team/build")
+def nw_team_build(club: str = Form(...)):
+    """One club on request: photos for those who have none (free Commons portraits, strict match), faces, then Sync."""
+    import threading
+    _nw_need()
+    if TEAM["running"] or NWP["running"]:
+        raise HTTPException(409, "Es läuft schon eine Berechnung")
+    if not nw.needs_build(club):
+        raise HTTPException(422, "Dieses Team braucht keinen Build")
+    TEAM.update(running=True, club=club, phase="Start", result=None)
+    threading.Thread(target=_team_run, args=(club,), daemon=True).start()
+    return {"ok": True}
+
+
+@app.get("/api/newworld/team/progress")
+def nw_team_progress():
+    return TEAM
 
 
 @app.get("/api/players")

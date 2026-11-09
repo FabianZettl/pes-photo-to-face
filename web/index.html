@@ -122,7 +122,10 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
   <div class="card" id="p6" hidden>
     <h3>New World · Spieler des letzten Mod-Studio-Builds</h3>
     <div class="hint" id="nwsum" style="margin:0 0 8px"></div>
-    <input id="nwq" placeholder="Name, Verein oder Geburtsdatum" style="width:100%">
+    <select id="nwclub"><option value="">Alle Teams</option></select>
+    <div class="row" style="margin-top:6px"><button id="nwteamcheck" style="background:var(--line);color:var(--fg)" disabled>Team prüfen</button><button id="nwteambuild" disabled>Team bauen</button></div>
+    <div class="hint">Team prüfen: nur Metadaten. Team bauen: lädt die freien Commons-Fotos dieses Teams, berechnet die Gesichter und gleicht mit dem Build ab.</div>
+    <input id="nwq" placeholder="Name, Verein oder Geburtsdatum" style="width:100%;margin-top:8px">
     <select id="nwstate" style="margin-top:6px"><option value="">Alle (ohne gerenderte Gesichter)</option><option value="nophoto">Kein Foto</option><option value="photo">Foto da, noch nicht berechnet</option><option value="done">Gesicht berechnet</option><option value="rendered">Hat gerendertes Gesicht</option></select>
     <div class="row"><button id="nwall">Alle mit Foto berechnen</button><button id="nwsync">Mit Build abgleichen</button><button id="nwcheck" style="background:var(--line);color:var(--fg)">Sichtbare auf Commons prüfen</button><button id="nwref" style="background:var(--line);color:var(--fg)">Neu einlesen</button></div>
     <div class="bar" style="margin-top:12px"><i id="nwbar" style="left:0;width:0"></i></div>
@@ -135,7 +138,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
 
 <script>
 const G={Augen:/Eye|Iris|Pupil|Eyelid/,Brauen:/Brow|Temple/,Nase:/Nose|Nostril|Laughter/,Mund:/Lip|Mouth/,'Haare · Vorne':/^Hair(Front|Parting|Hairline|Forehead)/,'Haare · Seite/Hinten':/^HairBack/,'Haare · Gesamt':/^Hair/,Kinn:/Chin|Jaw|Cheek|Neck/,Ohren:/^Ear/,Bart:/Facial|Thickness/,Kopf:/^(Head|Face|Skin|Forehead)/};
-const $=id=>document.getElementById(id);let file,tfile,hfile,tab=1,bpoll,fmpoll,nwpoll,nwtimer;
+const $=id=>document.getElementById(id);let file,tfile,hfile,tab=1,bpoll,fmpoll,nwpoll,nwtimer,teampoll;
 const say=(el,t,e)=>{$(el).textContent=t;$(el).className='msg'+(e?' err':'')};
 const post=(url,f,extra)=>{const d=new FormData();d.append('photo',f);for(const k in extra)d.append(k,extra[k]);return fetch(url,{method:'POST',body:d})};
 
@@ -281,6 +284,13 @@ async function fmLoad(){
 
 // ---- tab 6: New World
 const NWC={};
+async function nwClubs(){const cs=await (await fetch('/api/newworld/clubs')).json(),sel=$('nwclub'),cur=sel.value;
+  sel.replaceChildren(new Option('Alle Teams',''));for(const c of cs)sel.add(new Option(`${c.club} (${c.need} von ${c.total} offen)`,c.club));sel.value=cur}
+function listItems(items,title){const out=$('out');out.replaceChildren();
+  const h=document.createElement('div');h.className='hint';h.style.marginBottom='8px';h.textContent=title;out.append(h);
+  for(const it of items){const row=document.createElement('div');row.className='hit';row.style.cursor='default';
+    row.textContent=it.name;const sp=document.createElement('span');sp.textContent=it.status;sp.style.whiteSpace='normal';sp.style.textAlign='right';row.append(sp);out.append(row)}}
+
 const STATE={nophoto:'kein Foto',photo:'Foto da',done:'Gesicht berechnet',rendered:'gerendertes Gesicht'};
 async function nwLoad(){
   if(tab!=6)return;
@@ -288,7 +298,8 @@ async function nwLoad(){
   if(!r0.ok){say('nwmsg',(await r0.json()).detail,1);$('out').replaceChildren(Object.assign(document.createElement('span'),{textContent:'New World nicht verfügbar.',style:'color:var(--mut)'}));return}
   const sm=await r0.json();
   $('nwsum').textContent=`${sm.all} Spieler · ${sm.rendered} mit gerendertem Gesicht · ${sm.photo} mit Foto · ${sm.done} berechnet · Abgleich mit dem Build: ${sm.synced?'aktuell':'nicht aktuell'}`;
-  const r=await fetch('/api/newworld/list?limit=100&q='+encodeURIComponent($('nwq').value)+'&state='+$('nwstate').value),j=await r.json();
+  if($('nwclub').options.length<2)await nwClubs();
+  const r=await fetch('/api/newworld/list?limit=100&q='+encodeURIComponent($('nwq').value)+'&state='+$('nwstate').value+'&club='+encodeURIComponent($('nwclub').value)),j=await r.json();
   const out=$('out');out.replaceChildren();
   const h=document.createElement('div');h.className='hint';h.style.marginBottom='8px';h.textContent=`${j.total} Treffer${j.total>100?', die ersten 100 nach Stärke':''}`;out.append(h);
   for(const p of j.rows){
@@ -337,5 +348,19 @@ $('nwcheck').onclick=async()=>{const rows=[...document.querySelectorAll('#out .h
   if(!r.ok){say('nwmsg',c.detail,1);return}
   for(const nl of nls)delete NWC[nl];Object.assign(NWC,c);say('nwmsg',`${Object.keys(c).length} von ${nls.length} haben ein freies Foto auf Commons`);nwLoad()};
 $('nwref').onclick=async()=>{await fetch('/api/newworld/refresh',{method:'POST'});nwLoad()};
+$('nwclub').onchange=()=>{$('nwteamcheck').disabled=$('nwteambuild').disabled=!$('nwclub').value;nwLoad()};
+$('nwteamcheck').onclick=async()=>{const d=new FormData();d.append('club',$('nwclub').value);say('nwmsg','Prüfe das Team auf Wikimedia Commons (nur Metadaten) …');
+  const r=await fetch('/api/newworld/team/check',{method:'POST',body:d}),j=await r.json();
+  if(!r.ok){say('nwmsg',j.detail,1);return}
+  say('nwmsg',`${j.club}: ${j.need} brauchen einen Build, ${j.have_photo} haben schon ein Foto, für ${j.offers} gibt es ein freies Commons-Foto`);
+  listItems(j.players,`${j.club} · ${j.need} Spieler brauchen einen Build`)};
+async function teamPoll(){clearTimeout(teampoll);const j=await (await fetch('/api/newworld/team/progress')).json();
+  $('nwbar').style.width=(j.total?100*j.done/j.total:0)+'%';
+  say('nwmsg',`${j.club}: ${j.phase}${j.total?` (${j.done} von ${j.total})`:''}`+(j.errors.length?'\n'+j.errors.slice(0,4).join('\n'):''),j.errors.length>0);
+  if(tab===6&&j.items.length)listItems(j.items,`${j.club} · ${j.done} von ${j.total} verarbeitet`);
+  if(j.running)teampoll=setTimeout(teamPoll,1500);
+  else if(j.result)say('nwmsg',`${j.club}: fertig. ${j.result.written} Gesichter für den aktuellen Build geschrieben`+(j.result.moved.length?`; ${j.result.moved.length} Spieler mit neuer ID`:'')+'. Im Spiel erscheinen sie von selbst.')}
+$('nwteambuild').onclick=async()=>{const d=new FormData();d.append('club',$('nwclub').value);
+  const r=await fetch('/api/newworld/team/build',{method:'POST',body:d});if(!r.ok){say('nwmsg',(await r.json()).detail,1);return}teamPoll()};
 $('nwq').oninput=()=>{clearTimeout(nwtimer);nwtimer=setTimeout(nwLoad,250)};$('nwstate').onchange=nwLoad;
 </script>
