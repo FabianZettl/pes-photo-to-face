@@ -74,6 +74,24 @@ def add_embedded(label, head, hair_emb, rules, source):
     return len(data)
 
 
+def import_samples(path):
+    """Merge a hair_samples.json (or the zip from the tool's export) from someone else; samples are matched by id. -> (new, total)"""
+    import zipfile
+    path = Path(path)
+    if path.suffix == ".zip":
+        with zipfile.ZipFile(path) as z:
+            new = json.loads(z.read("hair_samples.json"))
+    else:
+        new = json.loads(path.read_text())
+    HAIR_DIR.mkdir(exist_ok=True)
+    data = _load(EMBEDDED, [])
+    have = {e["id"] for e in data}
+    add = [e for e in new if e["id"] not in have and len(e.get("head", [])) == 512 and len(e.get("hair", [])) == 512
+           and e.get("label", {}).get("HairStyle") is not None]
+    EMBEDDED.write_text(json.dumps(data + add))
+    return len(add), len(data) + len(add)
+
+
 def samples(folder):
     """-> Xhead, Xhair, rules (list), {target: labels, -1 = not labelled}, (from dump, by hand, features only)"""
     from .hairdata import decode

@@ -37,6 +37,10 @@ elif cmd == "evalhair":  # python -m pesface evalhair training
 elif cmd == "trainhair":  # python -m pesface trainhair training
     from . import hairmodel
     hairmodel.train(sys.argv[2])
+elif cmd == "import-hair":  # python -m pesface import-hair pes-hair-training.zip ...   (maintainers: merge exports from users)
+    from . import hairmodel
+    for f in sys.argv[2:]:
+        print(f, "-> neu %d, gesamt %d" % hairmodel.import_samples(f))
 elif cmd == "calhaircolour":  # python -m pesface calhaircolour training
     from . import hair
     hair.calibrate_colour(sys.argv[2])

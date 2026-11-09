@@ -65,10 +65,10 @@ The tool never crawls a site. Photos come only like this:
   licence and source are kept with the photo (`newworld_photos/credits.json`). On a sample of 600 players about 17 % of the new
   players had a free Commons photo (roughly 40 % of the strongest 1,000, 10 % of the weakest). Requests are throttled to one per
   second.
-- **Browser hand-off for pages you open yourself** (FMInside, Transfermarkt, SoFIFA; `userscript/`). One click on a player page
+- **Browser hand-off for pages you open yourself** (FMInside, Transfermarkt; `userscript/`, setup in [Browser script](#browser-script-tampermonkey)). One click on a player page
   sends name, club, birth date and photo to your local tool. The tool matches the player; an exact match (equal birth date,
   nearly equal name) is built immediately, anything less certain waits in *Eingang* for your confirmation. **The photo is used
-  once and dropped: it is never stored or shared.** On Transfermarkt and SoFIFA a second button, **→ Haare lernen**, puts the photo
+  once and dropped: it is never stored or shared.** On Transfermarkt a second button, **→ Haare lernen**, puts the photo
   in the *Haare* tab instead: it waits in RAM until you have said how you would build the hair in game; then only CLIP image
   features and your labels are kept for training and the photo is dropped. FMInside has no such button. Every click ends in a visible result (button state,
   toast). The selectors are best guesses (the sites block automated access); see the limits.
@@ -76,7 +76,7 @@ The tool never crawls a site. Photos come only like this:
 - Photos should be front-facing, hair visible, ideally ≥ 800 px; the tool warns about small ones.
 
 Respect each site's terms; checking them is your job. FMInside reserves its content against AI training and kicker blocks AI
-crawlers, so neither is a source for training data. SoFIFA's player images are EA's game renders, Transfermarkt's are agency photos.
+crawlers, so neither is a source for training data.
 
 ## Install
 
@@ -100,6 +100,35 @@ python -m pesface serve                    # http://localhost:8000
    few seconds after that; **F9** in the Sider overlay (module `faceai` selected) applies at once.
 4. Optional player search by name/team: build the list from your own game data with
    `python -m pesface players players_dump.bin dump_XXXX.bin <folder with Team.bin and PlayerAssignment.bin>`.
+
+## Browser script (Tampermonkey)
+
+1. Install [Tampermonkey](https://www.tampermonkey.net/) in your browser.
+2. Open the raw script
+   [`fminside-to-pes-face-ai.user.js`](https://raw.githubusercontent.com/FabianZettl/pes-photo-to-face/main/userscript/fminside-to-pes-face-ai.user.js);
+   Tampermonkey offers to install it (it updates itself from there).
+3. Start the tool (`python -m pesface serve`). The script talks only to `http://localhost:8000`.
+4. On a Transfermarkt (or FMInside) player page you opened yourself two buttons appear at the bottom right:
+   **→ PES Face AI** (build the face of that player) and, on Transfermarkt only, **→ Haare lernen** (hair training, below).
+
+## Help us train the hair model
+
+The hair choice (style, length, curl, front, parting, hairline, forehead, back) is the weakest part. It improves with examples
+labelled by people who know how they would build the hair in the game, so every user can contribute:
+
+1. Open Transfermarkt player pages with clearly visible hair, click **→ Haare lernen** (at least 5 to 10 per style, the rare
+   styles braids, locks, afro and mohawk matter most).
+2. In the tool's **Haare** tab click a photo, set the dropdowns the way you would build the hair in game, **Foto speichern**.
+   The photo is dropped at once; only 512-number image features of the head and of the hair region, your labels and the source
+   name are kept in `training_hair/embedded.json`. No photo, name or club is stored.
+3. After about 50 photos press **Training starten**. The table shows per option the accuracy of the rules, of the majority
+   guess and of the learned variants (cross-validation). Below 40 examples the model is not used.
+4. **Daten exportieren** downloads `pes-hair-training.zip` (samples + the training table). Open an issue with the template
+   *Hair training data* and attach it. The features are derived from photos of real people, so only send what you are fine
+   sharing. Maintainers merge the zips with `python -m pesface import-hair file.zip` and train on all of them.
+
+You are responsible for using the photo sources within their terms. FMInside has no hair button on purpose (it reserves its
+content against AI training).
 
 ## Quality and training
 
@@ -136,8 +165,8 @@ click feedback, against fixtures), `check_release.py` (the live take-over from `
   container is *not* verified to use the same record layout.
 - A few fields are loose guesses (head length/width/depth, upper eyelid type, laughter lines) and some menu values are inferred from menu
   order; [the record doc](docs/appearance-record.md) marks every field with its evidence.
-- Hair and beard are heuristics. Small photos (SoFIFA thumbnails are 120 px) give weak results.
-- The user script's selectors for Transfermarkt and SoFIFA could only be tested against fixtures and, for SoFIFA, a few real pages.
+- Hair and beard are heuristics. Small photos give weak results.
+- The user script's selectors for Transfermarkt and FMInside could only be tested against fixtures and a few real pages; if a layout changes the toast says what was not found.
 - `faceai_stats.lua` (Football Manager attributes → PES stats, via the FMInside hand-off) is experimental and not verified in game.
 
 ## Credits

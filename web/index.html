@@ -15,7 +15,7 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em;margin-right:auto}h1 span{color
 .col{display:grid;gap:20px;min-width:0}
 #out{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
 @media (max-width:820px){#out{position:static;max-height:none}}
-.drop{aspect-ratio:4/5;max-height:340px;width:100%;border:2px dashed var(--line);border-radius:12px;display:grid;place-items:center;color:var(--mut);text-align:center;cursor:pointer;background-size:cover;background-position:center}
+.drop{aspect-ratio:2/3;max-height:480px;width:100%;border:2px dashed var(--line);border-radius:12px;display:grid;place-items:center;color:var(--mut);text-align:center;cursor:pointer;background-size:contain;background-repeat:no-repeat;background-position:center}
 .drop.over{border-color:var(--acc)}
 select{width:100%;min-width:0}
 input[type=checkbox]{padding:0;width:auto}
@@ -83,6 +83,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
     <pre id="tlog"></pre>
   </div>
   <div class="card" id="p3" hidden>
+    <div class="hint" style="margin:0 0 8px">Haar-Training: Öffne ein Transfermarkt-Spielerprofil, klicke „→ Haare lernen“, hier das Foto anklicken, Haare einstellen, speichern. Nach ~50 Fotos „Training starten“. Das Foto wird nach dem Speichern verworfen. „Daten exportieren“ erzeugt eine Zip (nur Zahlenwerte und Labels, keine Fotos) für ein GitHub-Issue.</div>
     <div id="hbox" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
     <div class="hint" id="hboxnote" style="margin:0 0 8px"></div>
     <div class="drop" id="hdrop">Haar-Foto hierher ziehen<br>oder klicken</div>
@@ -106,7 +107,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
     <div class="hairsel" style="grid-template-columns:1fr;margin-top:0">
       <select id="tb" title="Seite/Hinten"><option value="">Seite/Hinten</option><option value="1">Normal</option><option value="2">Weniger Volumen</option><option value="3">Kürzere Seiten</option><option value="4">Kurzgeschnitten</option></select>
     </div>
-    <div class="row"><button id="hsave" disabled>Foto speichern</button><button id="hdiscard" hidden style="background:var(--line);color:var(--fg)">Verwerfen</button><button id="hrun">Training starten</button></div>
+    <div class="row"><button id="hsave" disabled>Foto speichern</button><button id="hdiscard" hidden style="background:var(--line);color:var(--fg)">Verwerfen</button><button id="hrun">Training starten</button><a id="hexp" href="/api/hair/export" download style="align-self:center;margin-left:8px">Daten exportieren</a></div>
     <div class="msg" id="hmsg"></div>
     <pre id="hlog"></pre>
   </div>
@@ -119,7 +120,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
     <div class="msg" id="bmsg"></div>
   </div>
   <div class="card" id="p5" hidden>
-    <h3>Eingang · Userscript (FMInside, Transfermarkt, SoFIFA)</h3>
+    <h3>Eingang · Userscript (FMInside, Transfermarkt)</h3>
     <div class="hint" style="margin:0 0 8px">Öffne in deinem Browser eine Spielerseite und klicke den Knopf des Userscripts. Der Spieler erscheint hier, du bestätigst den Treffer in der FL-Datenbank.</div>
     <label style="display:block;margin:6px 0;font-size:13px"><input type="checkbox" id="fmauto" checked> Bei exaktem Treffer (Name und Geburtsdatum, Neue-Welt-Spieler) sofort berechnen</label>
     <div class="msg" id="fmmsg"></div>
@@ -238,11 +239,15 @@ async function hairBoxLoad(){
   if(!curBox&&boxItems.length&&tab===3)pickBox(boxItems[0])}
 async function pickBox(it){
   curBox=it;hfile=null;$('hdiscard').hidden=false;$('hdrop').style.backgroundImage=`url(/api/hair/inbox/photo/${it.id})`;$('hdrop').textContent='';
-  $('hsave').disabled=true;say('hmsg','Schlage Einstellungen vor …');
-  const r=await fetch('/api/hair/inbox/suggest/'+it.id);if(!r.ok){say('hmsg',(await r.json()).detail||'Fehler',1);return}
-  const v=await r.json();$('ths').value=v.HairStyle;$('thl').value=v.HairLength;$('thc').value=v.HairCurl;
-  $('tf').value=v.HairFront??'';$('tp').value=v.HairParting??'';$('ta').value=v.HairHairline??'';$('tz').value=v.HairForehead??'';$('tb').value=v.HairBack??'';
-  say('hmsg',`${it.source||'Eingang'}${it.name?' · '+it.name:''}: so würdest du die Haare bauen?`);$('hsave').disabled=false;hairBoxLoad()}
+  $('hsave').disabled=false;say('hmsg','Schlage Einstellungen vor …');   // saving works even when no suggestion comes: the dropdowns are yours
+  try{
+    const r=await fetch('/api/hair/inbox/suggest/'+it.id);
+    if(!r.ok){say('hmsg','Kein Vorschlag ('+((await r.json()).detail||r.status)+'), stell die Haare selbst ein.',1)}
+    else{const v=await r.json();$('ths').value=v.HairStyle;$('thl').value=v.HairLength;$('thc').value=v.HairCurl;
+      $('tf').value=v.HairFront??'';$('tp').value=v.HairParting??'';$('ta').value=v.HairHairline??'';$('tz').value=v.HairForehead??'';$('tb').value=v.HairBack??'';
+      say('hmsg',`${it.source||'Eingang'}${it.name?' · '+it.name:''}: so würdest du die Haare bauen?`)}
+  }catch(e){say('hmsg','Fehler beim Vorschlag: '+e.message,1)}
+  hairBoxLoad()}
 $('hdiscard').onclick=async()=>{if(!curBox)return;const d=new FormData();d.append('iid',curBox.id);await fetch('/api/hair/inbox/discard',{method:'POST',body:d});curBox=null;$('hdiscard').hidden=true;$('hdrop').style.backgroundImage='';$('hdrop').textContent='Haar-Foto hierher ziehen oder klicken';$('hsave').disabled=true;hairBoxLoad()};
 $('hsave').onclick=async()=>{
   if(curBox){const d=new FormData();d.append('iid',curBox.id);d.append('style',$('ths').value);d.append('length',$('thl').value);d.append('curl',$('thc').value);
@@ -254,7 +259,7 @@ $('hsave').onclick=async()=>{
   say('hmsg',r.ok?`Gespeichert (${j.total} beschriftete Haar-Fotos)`+(j.warnings.length?'\n'+j.warnings.join('\n'):''):(j.detail||'Fehler'),!r.ok||j.warnings?.length);
   if(r.ok){$('hsave').disabled=true;$('hdrop').style.backgroundImage='';$('hdrop').textContent='Nächstes Foto'}};
 $('hrun').onclick=async()=>{$('hrun').disabled=true;say('hmsg','Training läuft…');$('hlog').textContent='';
-  const r=await fetch('/api/train/run',{method:'POST'}),j=await r.json();$('hrun').disabled=false;say('hmsg',r.ok?'Fertig':'Fehler',!r.ok);$('hlog').textContent=j.log||''};
+  const r=await fetch('/api/hair/train',{method:'POST'}),j=await r.json();$('hrun').disabled=false;say('hmsg',r.ok?'Fertig':'Fehler',!r.ok);$('hlog').textContent=j.log||''};
 
 
 // ---- tab 4: bulk
@@ -347,7 +352,7 @@ async function nwLoad(){
     const side=document.createElement('div');side.style.textAlign='right';
     const st=document.createElement('div');st.className='hint';st.textContent=STATE[p.state];side.append(st);
     if(p.state==='nophoto'){const lk=document.createElement('div');lk.className='hint';lk.style.marginTop='4px';const q=encodeURIComponent(p.name);
-      for(const [t,u] of [['Transfermarkt','https://www.transfermarkt.com/schnellsuche/ergebnis/schnellsuche?query='+q],['SoFIFA','https://sofifa.com/players?keyword='+q]]){const a=document.createElement('a');a.textContent=t;a.href=u;a.target='_blank';a.rel='noopener';a.style.marginLeft='8px';lk.append(a)}
+      for(const [t,u] of [['Transfermarkt','https://www.transfermarkt.com/schnellsuche/ergebnis/schnellsuche?query='+q]]){const a=document.createElement('a');a.textContent=t;a.href=u;a.target='_blank';a.rel='noopener';a.style.marginLeft='8px';lk.append(a)}
       side.append(lk)}
     if(p.state==='nophoto'){const b=document.createElement('button');b.textContent='Commons-Foto';b.style.cssText='margin-top:4px;background:var(--line);color:var(--fg)';
       b.onclick=async()=>{b.disabled=true;say('nwmsg','Suche auf Wikimedia Commons …');
@@ -411,7 +416,7 @@ const isDev=()=>{try{return localStorage.getItem('pfaDev')==='1'}catch(e){return
 function applyMode(){
   const dev=isDev();$('devtoggle').className=dev?'on':'';
   for(const id of ['t1','t2','t4'])$(id).hidden=!dev;
-  $('t3').hidden=!(dev||pendingHair>0);$('t3').innerHTML='Haare'+(pendingHair?` <b>${pendingHair}</b>`:'');
+  $('t3').hidden=false;$('t3').innerHTML='Haare'+(pendingHair?` <b>${pendingHair}</b>`:'');
   $('t5').hidden=!(dev||pending>0);$('t5').innerHTML='Eingang'+(pending?` <b>${pending}</b>`:'');
   const hiddenTab={1:'t1',2:'t2',3:'t3',4:'t4',5:'t5'}[tab];if(hiddenTab&&$(hiddenTab).hidden){setTab(6);nwLoad()}}
 $('devtoggle').onclick=()=>{try{localStorage.setItem('pfaDev',isDev()?'0':'1')}catch(e){}applyMode()};

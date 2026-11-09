@@ -91,7 +91,7 @@ This was built from the DLL's source and checked against a fake process (`tests/
 - Hair: rules on a hair mask give length/curl/colour; a CLIP zero-shot step separates braids, locks, afro, mohawk,
   normal; the colour is mapped to the nearest of the seven presets after a brightness calibration fitted on the
   training photos. With ~40 labelled photos (hand-labelled in the *Haare* tab, or from dumps) a logistic-regression
-  classifier on CLIP embeddings takes over for style, length, curl and the front/side/back options.
+  classifier on CLIP embeddings (head crop, hair-region crop or both, chosen per option by cross-validation) takes over for style, length, curl and the front/side/back options.
 - Beard: CLIP on the lower face decides none / stubble / full beard. The game's own beard data for real-face players is
   placeholder, so it is not used for training.
 

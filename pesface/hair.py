@@ -107,7 +107,11 @@ def hair_embedding(rgb, face, mask):
         pad = int(0.05 * max(w, h))
         box = (max(0, x0 + xs.min() - pad), max(0, y0 + ys.min() - pad), min(W, x0 + xs.max() + pad), min(H, y0 + ys.max() + pad))
     with torch.no_grad():
-        e = model.get_image_features(**proc(images=Image.fromarray(rgb[box[1]:box[3], box[0]:box[2]]), return_tensors="pt"))[0].numpy()
+        e = model.get_image_features(**proc(images=Image.fromarray(rgb[box[1]:box[3], box[0]:box[2]]), return_tensors="pt"))
+        if not torch.is_tensor(e):   # newer transformers return the pooled vision output, not the projected embedding
+            e = e.pooler_output
+        e = e[0].numpy()
+    assert e.shape == (512,), e.shape
     return e / np.linalg.norm(e)
 
 

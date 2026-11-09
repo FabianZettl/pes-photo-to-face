@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         Player page → PES Face AI
 // @namespace    https://github.com/FabianZettl/pes-photo-to-face
-// @version      0.9
-// @description  One click on a player page that YOU opened (FMInside, Transfermarkt, SoFIFA): sends name, club, birth date and photo to your local PES Face AI tool.
+// @version      1.0
+// @description  One click on a player page that YOU opened (FMInside, Transfermarkt): sends name, club, birth date and photo to your local PES Face AI tool.
 // @match        https://fminside.net/players/*
 // @match        https://www.fminside.net/players/*
 // @match        https://www.transfermarkt.com/*/profil/spieler/*
 // @match        https://www.transfermarkt.de/*/profil/spieler/*
 // @match        https://www.transfermarkt.co.uk/*/profil/spieler/*
-// @match        https://sofifa.com/player/*
+// @downloadURL  https://raw.githubusercontent.com/FabianZettl/pes-photo-to-face/main/userscript/fminside-to-pes-face-ai.user.js
+// @updateURL    https://raw.githubusercontent.com/FabianZettl/pes-photo-to-face/main/userscript/fminside-to-pes-face-ai.user.js
 // @grant        GM_xmlhttpRequest
 // @connect      localhost
 // @connect      127.0.0.1
@@ -32,7 +33,6 @@
     const h = location.hostname, p = location.pathname;
     if (/(^|\.)fminside\.net$/.test(h) && /^\/players\/\d+-[^/]+\/\d+-[^/]+\/?$/.test(p)) return "fminside";
     if (/(^|\.)transfermarkt\./.test(h) && /\/profil\/spieler\/\d+/.test(p)) return "transfermarkt";
-    if (/(^|\.)sofifa\.com$/.test(h) && /^\/player\/\d+/.test(p)) return "sofifa";
     return null;
   }
 
@@ -108,12 +108,6 @@
       d.team = text($(".data-header__club a")) || d.team;
       d.dob = findDob(text($('[itemprop="birthDate"]'))) || d.dob || findDob(text(head));
       d.imageUrl = $("img.data-header__profile-image")?.src || d.imageUrl;
-    } else if (s === "sofifa") {
-      const head = $(".profile") || $("main") || document.body;
-      d.name = d.name || text($(".profile h1")) || og("og:title").split(" - ")[0];
-      d.team = d.team || text($('a[href^="/team/"]'));
-      d.dob = d.dob || findDob(text(head));
-      d.imageUrl = $(".profile img")?.src || d.imageUrl;
     }
     d.name = (d.name || "").replace(/\s*\(.*\)\s*$/, "").trim() || d.name;
     return d;
@@ -136,10 +130,9 @@
     if (!bad) t._h = setTimeout(() => t.remove(), 12000);
   }
 
-  // The list thumbnails are small (SoFIFA 120 px): try the larger variants of the same image first, then the original.
+  // Transfermarkt serves small variants in lists: try the big one first, then the original.
   function imageUrls(u) {
     const out = [];
-    if (/sofifa\.net\/.*_\d+\.png/.test(u)) for (const w of [360, 240, 180]) out.push(u.replace(/_\d+\.png/, `_${w}.png`));
     if (/transfermarkt[^/]*\/portrait\/(header|medium|small)\//.test(u)) out.push(u.replace(/\/portrait\/(header|medium|small)\//, "/portrait/big/"));
     out.push(u);
     return out;

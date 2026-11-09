@@ -135,6 +135,34 @@ def train_run():
     return {"log": log.getvalue()}
 
 
+@app.post("/api/hair/train")
+def hair_train():
+    """Hair model only (the Haare tab): skips the face-model cross-validation, which takes minutes."""
+    from . import hairmodel
+    log = io.StringIO()
+    with contextlib.redirect_stdout(log):
+        try:
+            hairmodel.train(str(TRAIN))
+        except Exception as e:
+            print("Fehler:", e)
+    (model.DATA / "hair_last_train.txt").write_text(log.getvalue())   # goes into the export
+    return {"log": log.getvalue()}
+
+
+@app.get("/api/hair/export")
+def hair_export():
+    """Zip for a GitHub issue: the labelled samples (CLIP features + labels, no photos, no names) and the last training result."""
+    import zipfile
+    from . import hairmodel
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("hair_samples.json", hairmodel.EMBEDDED.read_text() if hairmodel.EMBEDDED.exists() else "[]")
+        last = model.DATA / "hair_last_train.txt"
+        z.writestr("training_result.txt", last.read_text() if last.exists() else "(noch kein Training gelaufen)")
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="pes-hair-training.zip"'})
+
+
 @app.get("/api/hair/list")
 def hair_list():
     from . import hairmodel

@@ -11,9 +11,7 @@ except ImportError:
     print("userscript check skipped (playwright missing)")
     sys.exit(0)
 src = (root.parent / "userscript" / "fminside-to-pes-face-ai.user.js").read_text()
-cases = [("transfermarkt-like.html", "transfermarkt", ("Ricky-Jade Jones", "FC St. Pauli", "2002-11-08")),
-         ("sofifa-jsonld-like.html", "sofifa", ("Aleks Stojaković", "GNK Dinamo Zagreb", "2004-02-17")),
-         ("sofifa-text-like.html", "sofifa", ("Mislav Ćutuk", "GNK Dinamo Zagreb", "2007-01-25"))]
+cases = [("transfermarkt-like.html", "transfermarkt", ("Ricky-Jade Jones", "FC St. Pauli", "2002-11-08")),]
 with sync_playwright() as p:
     b = p.chromium.launch(); pg = b.new_page()
     for f, site, want in cases:
