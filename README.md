@@ -54,6 +54,23 @@ python -m pesface serve                    # http://localhost:8000
 `python -m pesface players players_dump.bin dump_XXXX.bin <folder with Team.bin and PlayerAssignment.bin>`.
 Without it you can still type player IDs.
 
+## New World players (Football Life / FL Mod Studio)
+
+If you build worlds with [FL Mod Studio](https://github.com/Matozanato/FootballLife-new-leagues) (MIT), the *New World* tab lists
+every new player of the last build (from `fl26playerids.json`: name, club, birth date, NewLife id; ratings from your NewLife
+release zips) and marks who still has the generic pack face. Players that already have a rendered face model in a face pack
+(`livecpk/*/Asset/model/character/face/real/<id>/`) are detected and need nothing.
+
+1. Give a player a photo (drop it on his row, or use the FM hand-off, where the birth date makes the match exact).
+2. **Alle mit Foto berechnen** computes the faces. They are stored under the **NewLife id**, because Mod Studio hands out the
+   game id at Build and it can change.
+3. **Mit Build abgleichen** writes `faceai_newworld.csv` with the current game ids plus a fingerprint of that build's
+   `fl26playerids.json`. `faceai.lua` uses the rows only while the fingerprint still matches, so a face can never land on the
+   wrong player after a rebuild; if the build changed it logs that a new Sync is needed.
+
+Paths: `FACEAI_DIR` = `<SiderAddons>/content/faceai` (the tool derives `SiderAddons` from it; override with `SIDER_DIR`),
+`NEWLIFE_DIR` = the folder with the NewLife zips (default `~/Downloads/NewLife*`).
+
 ## FMInside hand-off (optional)
 
 For players that exist in your database, take the photo and the Football Manager values from their FMInside page:
@@ -110,6 +127,7 @@ Writing is the reverse. `tests/check_layout.py` checks the table for overlaps, `
 - **juce** – Sider (PES Sider, announced on the evo-web forum), which makes in-game Lua modules possible.
 - The **Football Life 26/27 module set** (`fl26appcap`, `fl26regen`, FL26 Mod Studio) – their comments documented the
   appearance table size and how new-world players get faces; `faceai.lua` is written to coexist with them.
+- **FL Mod Studio** (Matozanato, MIT) – the world files and NewLife releases the *New World* tab reads; its documentation of the world file and of the `fl26` modules was the reference for how new players get their faces.
 - **Karijera 26** – `PlayerDump` (optional source of the player list) and `GrowthBridge`, whose documented player-block layout (7-bit attribute fields) `faceai_stats.lua` uses. Not included.
 - **DeepFace** (Sefik Ilkin Serengil) and **FaceNet** – face embeddings.
 - **MediaPipe** (Google, Apache-2.0) – hair segmentation model, downloaded on first use.

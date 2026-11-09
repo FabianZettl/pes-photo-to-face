@@ -33,7 +33,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
 <main>
 <header>
   <h1>PES Face AI <span>Foto ↔ Face-Werte</span></h1>
-  <div class="tabs"><button id="t1" class="on">Erkennen</button><button id="t2">Training</button><button id="t3">Haare</button><button id="t4">Bulk</button><button id="t5">FM</button></div>
+  <div class="tabs"><button id="t1" class="on">Erkennen</button><button id="t6">New World</button><button id="t5">FM</button><button id="t4">Bulk</button><button id="t2">Training</button><button id="t3">Haare</button></div>
 </header>
 
 <div class="col">
@@ -119,6 +119,15 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
     <div class="hint" style="margin:0 0 8px">Öffne in deinem Browser eine FMInside-Spielerseite und klicke den Knopf des Userscripts. Der Spieler erscheint hier, du bestätigst den Treffer in der FL-Datenbank.</div>
     <div class="msg" id="fmmsg"></div>
   </div>
+  <div class="card" id="p6" hidden>
+    <h3>New World · Spieler des letzten Mod-Studio-Builds</h3>
+    <div class="hint" id="nwsum" style="margin:0 0 8px"></div>
+    <input id="nwq" placeholder="Name, Verein oder Geburtsdatum" style="width:100%">
+    <select id="nwstate" style="margin-top:6px"><option value="">Alle (ohne gerenderte Gesichter)</option><option value="nophoto">Kein Foto</option><option value="photo">Foto da, noch nicht berechnet</option><option value="done">Gesicht berechnet</option><option value="rendered">Hat gerendertes Gesicht</option></select>
+    <div class="row"><button id="nwall">Alle mit Foto berechnen</button><button id="nwsync">Mit Build abgleichen</button><button id="nwref" style="background:var(--line);color:var(--fg)">Neu einlesen</button></div>
+    <div class="bar" style="margin-top:12px"><i id="nwbar" style="left:0;width:0"></i></div>
+    <div class="msg" id="nwmsg"></div>
+  </div>
 </div>
 
 <div class="card" id="out"><span style="color:var(--mut)">Noch kein Ergebnis.</span></div>
@@ -126,7 +135,7 @@ pre{margin:10px 0 0;white-space:pre-wrap;color:var(--mut);font:13px ui-monospace
 
 <script>
 const G={Augen:/Eye|Iris|Pupil|Eyelid/,Brauen:/Brow|Temple/,Nase:/Nose|Nostril|Laughter/,Mund:/Lip|Mouth/,'Haare · Vorne':/^Hair(Front|Parting|Hairline|Forehead)/,'Haare · Seite/Hinten':/^HairBack/,'Haare · Gesamt':/^Hair/,Kinn:/Chin|Jaw|Cheek|Neck/,Ohren:/^Ear/,Bart:/Facial|Thickness/,Kopf:/^(Head|Face|Skin|Forehead)/};
-const $=id=>document.getElementById(id);let file,tfile,hfile,tab=1,bpoll,fmpoll;
+const $=id=>document.getElementById(id);let file,tfile,hfile,tab=1,bpoll,fmpoll,nwpoll,nwtimer;
 const say=(el,t,e)=>{$(el).textContent=t;$(el).className='msg'+(e?' err':'')};
 const post=(url,f,extra)=>{const d=new FormData();d.append('photo',f);for(const k in extra)d.append(k,extra[k]);return fetch(url,{method:'POST',body:d})};
 
@@ -144,10 +153,10 @@ function render(values,ranges,title){
 }
 
 // ---- tabs
-function setTab(n){tab=n;$('t1').className=n==1?'on':'';$('t2').className=n==2?'on':'';$('t3').className=n==3?'on':'';$('t4').className=n==4?'on':'';$('t5').className=n==5?'on':'';$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('p3').hidden=n!=3;$('p4').hidden=n!=4;$('p5').hidden=n!=5;$('pcard').hidden=n==3||n==4||n==5;
-  $('out').replaceChildren(Object.assign(document.createElement('span'),{textContent:n==1?'Noch kein Ergebnis.':n==2?'Wähle einen Spieler: hier erscheinen seine aktuellen Spieldaten.':n==3?'Foto laden: hier erscheint der Vorschlag des Tools für die Haare.':n==4?'Hier erscheint das Ergebnis des Durchlaufs.':'Noch nichts aus FMInside empfangen.',style:'color:var(--mut)'}));
+function setTab(n){tab=n;$('t1').className=n==1?'on':'';$('t2').className=n==2?'on':'';$('t3').className=n==3?'on':'';$('t4').className=n==4?'on':'';$('t5').className=n==5?'on':'';$('t6').className=n==6?'on':'';$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('p3').hidden=n!=3;$('p4').hidden=n!=4;$('p5').hidden=n!=5;$('p6').hidden=n!=6;$('pcard').hidden=n==3||n==4||n==5||n==6;
+  $('out').replaceChildren(Object.assign(document.createElement('span'),{textContent:n==1?'Noch kein Ergebnis.':n==2?'Wähle einen Spieler: hier erscheinen seine aktuellen Spieldaten.':n==3?'Foto laden: hier erscheint der Vorschlag des Tools für die Haare.':n==4?'Hier erscheint das Ergebnis des Durchlaufs.':n==5?'Noch nichts aus FMInside empfangen.':'Lade …',style:'color:var(--mut)'}));
   if(n==2)loadTruth()}
-$('t1').onclick=()=>setTab(1);$('t2').onclick=()=>setTab(2);$('t3').onclick=()=>{setTab(3);hairCount()};$('t4').onclick=()=>setTab(4);$('t5').onclick=()=>{setTab(5);fmLoad()};
+$('t1').onclick=()=>setTab(1);$('t2').onclick=()=>setTab(2);$('t3').onclick=()=>{setTab(3);hairCount()};$('t4').onclick=()=>setTab(4);$('t5').onclick=()=>{setTab(5);fmLoad()};$('t6').onclick=()=>{setTab(6);nwLoad()};
 
 // ---- player search (shared)
 let ft;const search=()=>{clearTimeout(ft);ft=setTimeout(async()=>{
@@ -240,7 +249,14 @@ async function fmLoad(){
     if(!items.length)out.append(Object.assign(document.createElement('span'),{textContent:'Noch nichts aus FMInside empfangen.',style:'color:var(--mut)'}));
     for(const it of items){
       const box=document.createElement('div');box.className='fmitem';box.style.cssText='display:grid;grid-template-columns:90px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)';
-      const img=document.createElement('img');img.src='/api/fm/photo/'+it.id;img.style.cssText='width:90px;border-radius:8px';
+      let img;
+      if(it.has_image){img=document.createElement('img');img.src='/api/fm/photo/'+it.id;img.style.cssText='width:90px;border-radius:8px'}
+      else{img=document.createElement('div');img.className='drop';img.style.cssText='width:90px;aspect-ratio:3/4;font-size:12px;padding:6px';img.textContent='Foto hierher ziehen';
+        const fi=document.createElement('input');fi.type='file';fi.accept='image/*';fi.hidden=true;
+        const up=async f=>{if(!f)return;const d=new FormData();d.append('item_id',it.id);d.append('photo',f);
+          const r=await fetch('/api/fm/attach',{method:'POST',body:d});if(r.ok){out.dataset.n='';fmLoad()}else say('fmmsg',(await r.json()).detail,1)};
+        img.onclick=()=>fi.click();fi.onchange=e=>up(e.target.files[0]);
+        img.ondragover=e=>{e.preventDefault()};img.ondrop=e=>{e.preventDefault();up(e.dataTransfer.files[0])};img.append(fi)}
       const right=document.createElement('div');
       const head=document.createElement('div');head.innerHTML='<b></b><div class="hint"></div>';head.firstChild.textContent=it.name;head.lastChild.textContent=[it.team,it.nationality,it.dob].filter(Boolean).join(' · ');
       const sel=document.createElement('select');sel.style.marginTop='8px';
@@ -262,4 +278,42 @@ async function fmLoad(){
       no.onclick=async()=>{const d=new FormData();d.append('item_id',it.id);await fetch('/api/fm/discard',{method:'POST',body:d});out.dataset.n='';fmLoad()};
       row.append(ok,no);right.append(head,sel,other,warn,row);box.append(img,right);out.append(box)}}
   fmpoll=setTimeout(fmLoad,2500)}
+
+// ---- tab 6: New World
+const STATE={nophoto:'kein Foto',photo:'Foto da',done:'Gesicht berechnet',rendered:'gerendertes Gesicht'};
+async function nwLoad(){
+  if(tab!=6)return;
+  const r0=await fetch('/api/newworld/summary');
+  if(!r0.ok){say('nwmsg',(await r0.json()).detail,1);$('out').replaceChildren(Object.assign(document.createElement('span'),{textContent:'New World nicht verfügbar.',style:'color:var(--mut)'}));return}
+  const sm=await r0.json();
+  $('nwsum').textContent=`${sm.all} Spieler · ${sm.rendered} mit gerendertem Gesicht · ${sm.photo} mit Foto · ${sm.done} berechnet · Abgleich mit dem Build: ${sm.synced?'aktuell':'nicht aktuell'}`;
+  const r=await fetch('/api/newworld/list?limit=100&q='+encodeURIComponent($('nwq').value)+'&state='+$('nwstate').value),j=await r.json();
+  const out=$('out');out.replaceChildren();
+  const h=document.createElement('div');h.className='hint';h.style.marginBottom='8px';h.textContent=`${j.total} Treffer${j.total>100?', die ersten 100 nach Stärke':''}`;out.append(h);
+  for(const p of j.rows){
+    const row=document.createElement('div');row.className='hit';row.style.cssText='display:grid;grid-template-columns:56px 1fr auto;gap:10px;align-items:center;cursor:default;border-bottom:1px solid var(--line);border-radius:0';
+    let thumb;
+    if(p.state==='photo'||p.state==='done'){thumb=document.createElement('img');thumb.src='/api/newworld/photo/'+p.nl+'?'+Date.now();thumb.style.cssText='width:56px;height:70px;object-fit:cover;border-radius:6px'}
+    else{thumb=document.createElement('div');thumb.className='drop';thumb.style.cssText='width:56px;height:70px;aspect-ratio:auto;font-size:10px;padding:2px';thumb.textContent=p.state==='rendered'?'✔':'Foto';
+      if(p.state!=='rendered'){const fi=document.createElement('input');fi.type='file';fi.accept='image/*';fi.hidden=true;
+        const up=async f=>{if(!f)return;const d=new FormData();d.append('nl',p.nl);d.append('photo',f);const r=await fetch('/api/newworld/photo',{method:'POST',body:d});if(r.ok)nwLoad();else say('nwmsg',(await r.json()).detail,1)};
+        thumb.onclick=()=>fi.click();fi.onchange=e=>up(e.target.files[0]);thumb.ondragover=e=>e.preventDefault();thumb.ondrop=e=>{e.preventDefault();up(e.dataTransfer.files[0])};thumb.append(fi)}}
+    const mid=document.createElement('div');mid.innerHTML='<b></b><div class="hint"></div>';mid.firstChild.textContent=p.name;
+    mid.lastChild.textContent=`${p.club} · ${p.born}${p.overall?' · Stärke '+p.overall:''} · ID ${p.id}`;
+    const side=document.createElement('div');side.style.textAlign='right';
+    const st=document.createElement('div');st.className='hint';st.textContent=STATE[p.state];side.append(st);
+    if(p.state==='photo'){const b=document.createElement('button');b.textContent='Berechnen';b.style.marginTop='4px';
+      b.onclick=async()=>{b.disabled=true;const d=new FormData();d.append('nl',p.nl);const r=await fetch('/api/newworld/compute',{method:'POST',body:d});if(!r.ok){say('nwmsg',(await r.json()).detail,1);b.disabled=false;return}nwProgress()};side.append(b)}
+    row.append(thumb,mid,side);out.append(row)}
+}
+async function nwProgress(){
+  clearTimeout(nwpoll);const j=await (await fetch('/api/newworld/progress')).json();
+  $('nwbar').style.width=(j.total?100*j.done/j.total:0)+'%';
+  say('nwmsg',`${j.done} von ${j.total} berechnet`+(j.running?' …':'')+(j.errors.length?'\n'+j.errors.slice(0,5).join('\n'):''),j.errors.length>0);
+  if(j.running)nwpoll=setTimeout(nwProgress,1500);else nwLoad()}
+$('nwall').onclick=async()=>{const r=await fetch('/api/newworld/compute',{method:'POST',body:new FormData()});if(!r.ok){say('nwmsg',(await r.json()).detail,1);return}nwProgress()};
+$('nwsync').onclick=async()=>{const r=await fetch('/api/newworld/sync',{method:'POST'}),j=await r.json();
+  say('nwmsg',r.ok?`${j.written} Gesichter für den aktuellen Build geschrieben`+(j.moved.length?`; ${j.moved.length} Spieler haben eine neue ID (${j.moved.slice(0,3).join(', ')})`:'')+(j.gone?`; ${j.gone} nicht mehr im Build`:''):(j.detail||'Fehler'),!r.ok);nwLoad()};
+$('nwref').onclick=async()=>{await fetch('/api/newworld/refresh',{method:'POST'});nwLoad()};
+$('nwq').oninput=()=>{clearTimeout(nwtimer);nwtimer=setTimeout(nwLoad,250)};$('nwstate').onchange=nwLoad;
 </script>

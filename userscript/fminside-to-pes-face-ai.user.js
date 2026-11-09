@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FMInside → PES Face AI
 // @namespace    https://github.com/FabianZettl/pes-photo-to-face
-// @version      0.1
+// @version      0.4
 // @description  One click on a player page that YOU opened: sends name, club, stats and photo to your local PES Face AI tool.
 // @match        https://fminside.net/players/*
 // @match        https://www.fminside.net/players/*
@@ -45,15 +45,42 @@
     return out;
   }
 
-  function scrape() {
-    const name = text($(".player-hero-copy h1")) || text($("h1"));
-    const i = info();
-    const find = (re) => Object.entries(i).find(([k]) => re.test(k))?.[1] || "";
+  // FM attribute names as the site shows them; used to find the values by their label if the table markup changes
+  const FM_ATTRS = ["Corners", "Crossing", "Dribbling", "Finishing", "First Touch", "Free Kick Taking", "Heading", "Long Shots",
+    "Long Throws", "Marking", "Passing", "Penalty Taking", "Tackling", "Technique", "Aggression", "Anticipation", "Bravery",
+    "Composure", "Concentration", "Decisions", "Determination", "Flair", "Leadership", "Off the Ball", "Positioning",
+    "Teamwork", "Vision", "Work Rate", "Acceleration", "Agility", "Balance", "Jumping Reach", "Natural Fitness", "Pace",
+    "Stamina", "Strength", "Aerial Reach", "Command of Area", "Communication", "Eccentricity", "Handling", "Kicking",
+    "One on Ones", "Punching", "Reflexes", "Rushing Out", "Throwing"];
+
+  function scrapeStats() {
     const stats = {};
+    // 1) the markup the add-on this was modelled on documents
     document.querySelectorAll("table tr").forEach((tr) => {
       const n = $("[data-player-stat-name]", tr), v = $(".stat", tr);
       if (n && v) stats[n.getAttribute("data-player-stat-name")] = text(v);
     });
+    if (Object.keys(stats).length) return stats;
+    // 2) any other markup: a leaf element whose text is exactly an attribute name, and the number next to it
+    const want = new Set(FM_ATTRS.map((a) => a.toLowerCase()));
+    const num = (t) => { const m = /(^|\D)(\d{1,2})(\D|$)/.exec(t); return m && +m[2] >= 1 && +m[2] <= 20 ? m[2] : null; };
+    document.querySelectorAll("body *").forEach((el) => {
+      if (el.children.length) return;
+      const name = text(el);
+      if (!want.has(name.toLowerCase())) return;
+      const cands = [el.nextElementSibling && text(el.nextElementSibling),
+        el.parentElement && text(el.parentElement).replace(name, ""),
+        el.parentElement && el.parentElement.nextElementSibling && text(el.parentElement.nextElementSibling)];
+      for (const c of cands) { const v = c && num(c); if (v) { if (!(name in stats)) stats[name] = v; break; } }
+    });
+    return stats;
+  }
+
+  function scrape() {
+    const name = text($(".player-hero-copy h1")) || text($("h1"));
+    const i = info();
+    const find = (re) => Object.entries(i).find(([k]) => re.test(k))?.[1] || "";
+    const stats = scrapeStats();
     const img = $('meta[property="og:image"]')?.content || $(".player-hero img")?.src || "";
     return {
       name,
@@ -70,15 +97,28 @@
     const d = scrape();
     console.log("[PES Face AI] gefunden:", { ...d, stats: Object.keys(d.stats).length + " Werte" });
     if (!d.name) return toast("Name nicht gefunden (Seitenlayout geändert?). Siehe Konsole.", true);
-    if (!d.imageUrl) return toast("Foto nicht gefunden (Seitenlayout geändert?). Siehe Konsole.", true);
+    if (!Object.keys(d.stats).length) {   // help finding the markup: what contains the label "Finishing"?
+      const hit = [...document.querySelectorAll("body *")].filter((e) => !e.children.length && /^Finishing$/i.test(text(e))).slice(0, 2);
+      console.warn("[PES Face AI] keine Werte gefunden. Element mit 'Finishing':", hit.map((e) => e.outerHTML + " | Eltern: " + (e.parentElement && e.parentElement.outerHTML.slice(0, 300))));
+    }
     try {
-      const im = await gm({ method: "GET", url: d.imageUrl, responseType: "blob", timeout: 20000 });
-      const dataUrl = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(im.response); });
+      let image = null, note = "";
+      // fetch the photo the way the page itself does (with the page as referrer); if the image server still refuses,
+      // the data is sent anyway and the photo can be dropped into the tool by hand
+      const im = await gm({ method: "GET", url: d.imageUrl, responseType: "blob", timeout: 20000,
+        headers: { Referer: location.href, Accept: "image/avif,image/webp,image/*,*/*;q=0.8" } });
+      console.log("[PES Face AI] Bild:", d.imageUrl, "Status", im.status, "Typ", im.response && im.response.type, "Größe", im.response && im.response.size);
+      if (im.status === 200 && im.response && im.response.size >= 500) {
+        image = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(im.response); });
+      } else {
+        note = ` Foto-Download abgelehnt (Status ${im.status}): bitte das Foto im Tool-Tab "FM" von Hand ablegen.`;
+      }
       const r = await gm({ method: "POST", url: SERVER + "/api/fm/import", headers: { "Content-Type": "application/json" },
-        data: JSON.stringify({ ...d, image: dataUrl }), timeout: 30000 });
+        data: JSON.stringify({ ...d, image }), timeout: 30000 });
       if (r.status !== 200) return toast("Tool meldet: " + (JSON.parse(r.responseText).detail || r.status), true);
       const best = JSON.parse(r.responseText).best[0];
-      toast(best ? `Gesendet. Bester Treffer: ${best.name} (${Math.round(best.score * 100)} %). Bestätige im Tab "FM".` : "Gesendet, aber kein Treffer in der Spielerliste. Wähle im Tool von Hand.");
+      if (!Object.keys(d.stats).length) note += " Keine Werte gefunden (siehe Konsole).";
+      toast((best ? `Gesendet (${Object.keys(d.stats).length} Werte). Bester Treffer: ${best.name} (${Math.round(best.score * 100)} %). Bestätige im Tab "FM".` : "Gesendet, aber kein Treffer in der Spielerliste. Wähle im Tool von Hand.") + note, !!note);
     } catch (e) {
       toast("Konnte das Tool nicht erreichen (läuft es auf " + SERVER + "?): " + e.message, true);
     }

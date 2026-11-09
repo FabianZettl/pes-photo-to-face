@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import model
+from . import newworld as nw
 from .encoder import photo_warnings, predict_all
 
 app = FastAPI()
@@ -218,6 +219,37 @@ INBOX = {}   # id -> item; photos stay in memory only and are dropped as soon as
 MAX_IMG = 8 * 1024 * 1024
 
 
+def _to_jpeg(raw):
+    """Whatever the site or the user hands over (jpg, png, webp, gif, avif, ...) -> plain JPEG bytes."""
+    from PIL import Image
+    if len(raw) > MAX_IMG:
+        raise HTTPException(413, "Bild zu groß")
+    try:
+        im = Image.open(io.BytesIO(raw))
+        im.load()
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, "JPEG", quality=95)
+        return buf.getvalue()
+    except Exception:
+        raise HTTPException(422, f"Die Daten sind kein lesbares Bild ({len(raw)} Bytes, Anfang: {raw[:24]!r})")
+
+
+def _cands(name, team, dob):
+    """Name/club candidates from the player list, plus new-world players whose birth date equals the one on the FM page."""
+    import datetime
+    cands = model.match_players(name, team)
+    try:
+        iso = datetime.datetime.strptime(dob.strip(), "%d %B %Y").date().isoformat()
+    except ValueError:
+        iso = None
+    if iso and nw.available():
+        for p in nw.players():
+            if p["born"] == iso and model._tokens(name) and set(model._tokens(name)) & set(model._tokens(p["name"])):
+                cands = [c for c in cands if c["id"] != p["id"]]
+                cands.insert(0, {"id": p["id"], "name": p["name"], "teams": [p["club"]], "has_face": True, "score": 1.0})
+    return cands[:5]
+
+
 @app.post("/api/fm/import")
 async def fm_import(request: Request):
     """From the userscript: one player page opened by the user in his own browser."""
@@ -226,31 +258,40 @@ async def fm_import(request: Request):
     name, team = str(d.get("name", "")).strip(), str(d.get("team", "")).strip()
     if not name:
         raise HTTPException(422, "Name fehlt")
-    img = d.get("image") or ""
-    m = re.match(r"data:image/(\w+);base64,(.*)", img, re.S)
-    if not m:
-        raise HTTPException(422, "Bild fehlt (data-URL erwartet)")
-    raw = base64.b64decode(m.group(2))
-    if len(raw) > MAX_IMG:
-        raise HTTPException(413, "Bild zu groß")
+    raw, kind = None, ".jpg"
+    if d.get("image"):   # optional: when the browser could not fetch the photo it is attached later by hand
+        m = re.match(r"data:[^,]*;base64,(.*)", d["image"], re.S)
+        if not m:
+            raise HTTPException(422, "Bild: data-URL erwartet")
+        raw = _to_jpeg(base64.b64decode(m.group(1)))
     iid = uuid.uuid4().hex[:8]
     INBOX[iid] = {"id": iid, "name": name, "team": team, "nationality": str(d.get("nationality", "")),
                   "dob": str(d.get("dob", "")), "stats": d.get("stats") or {}, "url": str(d.get("url", "")),
-                  "ext": "." + m.group(1).replace("jpeg", "jpg"), "image": raw, "cands": model.match_players(name, team)}
+                  "ext": kind, "image": raw, "cands": _cands(name, team, str(d.get("dob", "")))}
     return {"ok": True, "id": iid, "best": INBOX[iid]["cands"][:1]}
 
 
 @app.get("/api/fm/inbox")
 def fm_inbox():
-    return [{k: v for k, v in it.items() if k != "image"} for it in INBOX.values()]
+    return [{**{k: v for k, v in it.items() if k != "image"}, "has_image": it["image"] is not None} for it in INBOX.values()]
+
+
+@app.post("/api/fm/attach")
+def fm_attach(item_id: str = Form(...), photo: UploadFile = File(...)):
+    """Photo supplied by hand for an item whose browser download failed."""
+    it = INBOX.get(item_id)
+    if not it:
+        raise HTTPException(404, "Eintrag nicht gefunden")
+    it["image"] = _to_jpeg(photo.file.read())
+    return {"ok": True}
 
 
 @app.get("/api/fm/photo/{iid}")
 def fm_photo(iid: str):
     it = INBOX.get(iid)
-    if not it:
+    if not it or it["image"] is None:
         raise HTTPException(404)
-    return Response(it["image"], media_type="image/" + it["ext"][1:])
+    return Response(it["image"], media_type="image/jpeg")
 
 
 @app.post("/api/fm/accept")
@@ -260,14 +301,27 @@ def fm_accept(item_id: str = Form(...), player_id: str = Form(...)):
     it = INBOX.get(item_id)
     if not it or not player_id.isdigit():
         raise HTTPException(422, "Eintrag oder Spieler-ID ungültig")
-    with tempfile.NamedTemporaryFile(suffix=it["ext"]) as t:
-        t.write(it["image"]); t.flush()
+    warn, n = [], None
+    nwp = nw.by_game_id(player_id) if nw.available() and player_id.isdigit() else None
+    if nwp and it["image"] is not None and not nwp["rendered"]:
+        nw.save_photo(nwp["nl"], it["image"])
         try:
-            warn = photo_warnings(t.name)
-            vals = predict_all(t.name)
+            nw.compute(nwp["nl"])
         except ValueError as e:
             raise HTTPException(422, str(e))
-    n = model.queue(player_id, vals)
+        warn = ["Neue-Welt-Spieler: Gesicht gespeichert, im Tab New World „Mit Build abgleichen“ drücken"]
+        n = 0
+    elif it["image"] is not None:
+        with tempfile.NamedTemporaryFile(suffix=it["ext"]) as t:
+            t.write(it["image"]); t.flush()
+            try:
+                warn = photo_warnings(t.name)
+                vals = predict_all(t.name)
+            except ValueError as e:
+                raise HTTPException(422, str(e))
+        n = model.queue(player_id, vals)
+    else:
+        warn = ["Kein Foto: nur die Werte wurden übernommen, kein Gesicht"]
     f = model.QUEUE.parent / "fm_stats.json"   # raw FM attributes per player id, for a later stat converter
     store = json.loads(f.read_text()) if f.exists() else {}
     store[player_id] = {k: it[k] for k in ("name", "team", "nationality", "dob", "stats", "url")}
@@ -284,6 +338,87 @@ def fm_accept(item_id: str = Form(...), player_id: str = Form(...)):
 def fm_discard(item_id: str = Form(...)):
     INBOX.pop(item_id, None)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- New World (players of a Mod Studio build)
+NWP = {"running": False, "total": 0, "done": 0, "errors": []}
+
+
+def _nw_need():
+    if not nw.available():
+        raise HTTPException(404, f"{nw.PLAYERIDS} nicht gefunden: SIDER_DIR (SiderAddons) setzen und in Mod Studio einmal bauen")
+
+
+@app.get("/api/newworld/summary")
+def nw_summary():
+    _nw_need()
+    return nw.summary()
+
+
+@app.get("/api/newworld/list")
+def nw_list(q: str = "", state: str = "", limit: int = 100):
+    _nw_need()
+    rows, total = nw.listing(q, state, limit)
+    return {"rows": rows, "total": total}
+
+
+@app.post("/api/newworld/refresh")
+def nw_refresh():
+    _nw_need()
+    nw.players(refresh=True)
+    return nw.summary()
+
+
+@app.get("/api/newworld/photo/{nl}")
+def nw_photo(nl: str):
+    f = nw.photo_file(nl)
+    if not f:
+        raise HTTPException(404)
+    return FileResponse(f)
+
+
+@app.post("/api/newworld/photo")
+def nw_set_photo(nl: str = Form(...), photo: UploadFile = File(...)):
+    _nw_need()
+    nw.save_photo(nl, _to_jpeg(photo.file.read()))
+    return {"ok": True}
+
+
+def _nw_run(nls):
+    for nl in nls:
+        try:
+            nw.compute(nl)
+        except Exception as e:   # one bad photo must not stop the run
+            NWP["errors"].append(f"{nl}: {e}")
+        NWP["done"] += 1
+    NWP["running"] = False
+
+
+@app.post("/api/newworld/compute")
+def nw_compute(nl: str = Form("")):
+    """One player (nl given) or every player that has a photo but no face yet."""
+    import threading
+    _nw_need()
+    if NWP["running"]:
+        raise HTTPException(409, "Es läuft schon eine Berechnung")
+    st = nw._store()
+    todo = [nl] if nl else [p["nl"] for p in nw.players() if not p["rendered"] and nw.photo_file(p["nl"]) and p["nl"] not in st]
+    if not todo:
+        raise HTTPException(422, "Nichts zu berechnen: kein Spieler mit Foto ohne Gesicht")
+    NWP.update(running=True, total=len(todo), done=0, errors=[])
+    threading.Thread(target=_nw_run, args=(todo,), daemon=True).start()
+    return {"total": len(todo)}
+
+
+@app.get("/api/newworld/progress")
+def nw_progress():
+    return NWP
+
+
+@app.post("/api/newworld/sync")
+def nw_sync():
+    _nw_need()
+    return nw.sync()
 
 
 @app.get("/api/players")

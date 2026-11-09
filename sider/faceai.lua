@@ -10,6 +10,8 @@
 local m = {}
 local CSV = "content\\faceai\\faceai.csv"
 local DONE = "content\\faceai\\faceai_done.csv"
+local NW = "content\\faceai\\faceai_newworld.csv"      -- written by the tool's "New World" tab (Sync)
+local SIG = "content\\faceai\\faceai_world.sig"        -- path of fl26playerids.json + fingerprint of the build the NW ids belong to
 local STRIDE, TABLE_OFF, CAP = 72, 0x50910, 64999
 local EDITED_FLAG_BIT = 32
 local DEFAULT_TEMPLATE = 178371
@@ -100,11 +102,65 @@ NAMES[#NAMES + 1] = "Template"
 local CANON = "Id," .. table.concat(NAMES, ",")
 
 local ctx_ref, last = nil, "F9 = apply faceai.csv"
+local probes = {}
 local viewed, snap, snap_n = nil, nil, 0
 
 local function any(t) for _ in pairs(t) do return true end return false end
 
-local function p64(a) return memory.unpack("u64", memory.read(a, 8)) end
+-- Sider has no real pcall in some setups; same shim idea as the fl26 modules.
+local real_pcall = pcall ~= nil
+local pcall = pcall
+if not pcall then
+  if xpcall then
+    pcall = function(f, ...) local a = {...}; return xpcall(function() return f(unpack(a)) end, function(e) return e end) end
+  else
+    pcall = function(f, ...) return true, f(...) end
+  end
+end
+
+-- Reads that fail return nil instead of raising (the tick runs from the first frame on, before the game has built its
+-- tables). With luajit.ext.enabled the global ffi gives ReadProcessMemory; without it memory.read is used as it is.
+local safe_reads = real_pcall   -- can a failed read be survived? (ffi ReadProcessMemory or a real pcall)
+local num = function(a) return a end
+local rd = function(a, n) local ok, s = pcall(memory.read, a, n); return ok and s or nil end
+do
+  local F = ffi   -- global only with luajit.ext.enabled (no rawget in Sider Lua)
+  if F then
+    pcall(F.cdef, [[
+      void* FA_GetCurrentProcess(void) __asm__("GetCurrentProcess");
+      int FA_ReadProcessMemory(void* h, const void* addr, void* buf, size_t n, size_t* got) __asm__("ReadProcessMemory");
+    ]])
+    local ok, proc = pcall(function() return F.C.FA_GetCurrentProcess() end)
+    if ok and proc then
+      local buf, got, cap = F.new("uint8_t[?]", 0x10000), F.new("size_t[1]"), 0x10000
+      num = function(a)
+        if type(a) == "cdata" then local k, v = pcall(function() return tonumber(F.cast("uint64_t", a)) end); return k and v or a end
+        return tonumber(a) or a
+      end
+      safe_reads = true
+      rd = function(addr, len)
+        addr = num(addr)
+        if type(addr) ~= "number" or addr < 0x10000 or len <= 0 or len > 0x4000000 then return nil end
+        if len > cap then cap = len; buf = F.new("uint8_t[?]", cap) end
+        got[0] = 0
+        if F.C.FA_ReadProcessMemory(proc, F.cast("const void*", addr), buf, len, got) == 0 or tonumber(got[0]) ~= len then return nil end
+        return F.string(buf, len)
+      end
+    end
+  end
+end
+
+local function slurp(path)
+  local f = io.open(ctx_ref.sider_dir .. path, "r")
+  if not f then return "" end
+  local t = f:read("*a"); f:close()
+  return t
+end
+
+local function p64(a)
+  local s = rd(a, 8)
+  return s and memory.unpack("u64", s) or nil
+end
 
 local function split(line)
   local t = {}
@@ -164,17 +220,23 @@ local function with_sliders(s, row)   -- 72-byte record string -> same with the 
   return string.char(unpack(rec)), cnt
 end
 
-local function table_info()
+local function table_info()   -- app, first record, count; nil while the game has no (plausible) table yet
   local info = memory.get_process_info()
-  local app = p64(p64((info.base or info.base_address) + 0x3705E10) + 0x60)
-  return app, app + TABLE_OFF, memory.unpack("u16", memory.read(app + 0x4c7252, 2))
+  local obj = p64(num(info.base or info.base_address) + 0x3705E10)
+  local app = obj and obj ~= 0 and p64(num(obj) + 0x60)
+  if not app or num(app) < 0x10000 then return nil end
+  local c = rd(num(app) + 0x4c7252, 2)
+  local n = c and memory.unpack("u16", c) or 0
+  if n < 1 or n > CAP then return nil end
+  return num(app), num(app) + TABLE_OFF, n
 end
 
-local function read_records(base, n)   -- recs[0..n-1] = 72-byte strings
+local function read_records(base, n)   -- recs[0..n-1] = 72-byte strings; nil if any read fails
   local recs = {}
   for i = 0, n - 1, 1024 do
     local c = math.min(1024, n - i)
-    local s = memory.read(base + i * STRIDE, c * STRIDE)
+    local s = rd(base + i * STRIDE, c * STRIDE)
+    if not s then return nil end
     for j = 0, c - 1 do recs[i + j] = s:sub(j * STRIDE + 1, (j + 1) * STRIDE) end
   end
   return recs
@@ -182,17 +244,43 @@ end
 
 local function rec_id(s) return memory.unpack("u32", s:sub(1, 4)) end
 
+-- New-world rows carry the game ids of ONE Mod Studio build (the ids are handed out at Build and can change). The tool
+-- stores a fingerprint of that build's fl26playerids.json; the rows are used only while the file still has it.
+local function fingerprint(data)   -- same as pesface/newworld.py: h = (h * 31 + byte) mod 2^32
+  local h = 0
+  for i = 1, #data do h = (h * 31 + data:byte(i)) % 4294967296 end
+  return h
+end
+local world_t, world_ok_v, world_why = -100, false, ""
+local function world_ok()
+  if os.clock() - world_t < 30 then return world_ok_v, world_why end
+  world_t = os.clock()
+  local sigtxt = slurp(SIG)
+  local path, hash = sigtxt:match("([^\r\n]+)[\r\n]+(%d+)")
+  if not path then world_ok_v, world_why = false, "no faceai_world.sig (press Sync in the tool)"
+  else
+    local data = slurp(path)
+    if data == "" then world_ok_v, world_why = false, "cannot read " .. path
+    elseif tostring(fingerprint(data)) == hash then world_ok_v, world_why = true, ""
+    else world_ok_v, world_why = false, "the Mod Studio build changed since the last Sync: press Sync in the tool" end
+  end
+  return world_ok_v, world_why
+end
+
 -- Which player is on screen? F10 snapshot, change any slider of that player in Edit, F11: the one record that
 -- differs is the player. A CSV row with Id 0 goes to him.
 function m.snapshot()
   local _, base, n = table_info()
-  snap, snap_n = read_records(base, n), n
+  local recs = base and read_records(base, n)
+  if not recs then last = "appearance table not readable yet"; return end
+  snap, snap_n = recs, n
   last = "snapshot taken (" .. n .. " records): change a slider, then F11"
 end
 function m.find()
   if not snap then last = "press F10 first"; return end
   local _, base, n = table_info()
-  local now, hits = read_records(base, n), {}
+  local now, hits = base and read_records(base, n), {}
+  if not now then last = "appearance table not readable"; return end
   for i = 0, math.min(n, snap_n) - 1 do if now[i] ~= snap[i] then hits[#hits + 1] = rec_id(now[i]) end end
   if #hits == 1 then viewed = hits[1]; last = "player on screen: " .. viewed
   else last = #hits .. " records changed, expected 1"; viewed = nil end
@@ -200,17 +288,30 @@ function m.find()
   snap = now
 end
 
-function m.apply()
+function m.apply(silent)   -- returns true when done or nothing to do, false while the table is not ready
   local q, qraw, qhead = load_csv(CSV)
   local d, draw = load_csv(DONE)
   q, qraw, d, draw = q or {}, qraw or {}, d or {}, draw or {}
-  if not any(q) and not any(d) then last = "nothing to do (" .. CSV .. " empty or missing)"; log("faceai: " .. last); return end
+  local nwrows, nwset = load_csv(NW), {}   -- nwset: ids that came from the new-world file (never copied to done: they are tied to a build)
+  if nwrows and any(nwrows) then
+    local ok, why = world_ok()
+    if ok then for id, r in pairs(nwrows) do d[id] = r; nwset[id] = true end
+    elseif not silent or why ~= m.nw_warned then m.nw_warned = why; log("faceai: new-world rows skipped: " .. why) end
+  end
+  if not any(q) and not any(d) then
+    if not silent then last = "nothing to do (" .. CSV .. " empty or missing)"; log("faceai: " .. last) end
+    return true
+  end
   if q[0] then   -- a row with Id 0 goes to the player on screen
     if viewed then q[viewed], qraw[viewed] = q[0], qraw[0] else log("faceai: row 0 skipped, press F10, change a slider, F11") end
     q[0], qraw[0] = nil, nil
   end
   local app, base, n = table_info()
-  local recs = read_records(base, n)
+  local recs = app and read_records(base, n)
+  if not recs then
+    if not silent then last = "appearance table not ready"; log("faceai: " .. last) end
+    return false
+  end
   local pos, sorted = {}, true
   for i = 0, n - 1 do
     local id = rec_id(recs[i]); pos[id] = i
@@ -258,7 +359,7 @@ function m.apply()
   -- queue: drop the imported rows; done: add/replace them
   local keep, done = {}, {}
   for id, line in pairs(qraw) do if not applied[id] then keep[#keep + 1] = line end end
-  for id, r in pairs(d) do done[id] = canon_line(id, r) end
+  for id, r in pairs(d) do if not nwset[id] then done[id] = canon_line(id, r) end end
   for id in pairs(applied) do if q[id] then done[id] = canon_line(id, q[id]) end end
   local ids = {}
   for id in pairs(done) do ids[#ids + 1] = id end
@@ -275,6 +376,40 @@ function m.apply()
   local na = 0 for _ in pairs(applied) do na = na + 1 end
   last = string.format("%d player(s): %d inserted, %d skipped; %d left in queue", na, #added, #skipped, #keep)
   log("faceai: " .. last)
+  -- remember a few written records: if the game later rebuilds its table they lose the edited flag, and the tick
+  -- notices and writes everything again
+  probes = {}
+  local app2, base2, n2 = table_info()
+  local now = app2 and read_records(base2, n2)
+  if now then
+    for i = 0, n2 - 1 do
+      local id = rec_id(now[i])
+      if applied[id] and #probes < 3 then probes[#probes + 1] = {id = id, addr = base2 + i * STRIDE} end
+    end
+  end
+  return true
+end
+
+-- Automatic run: every ~3 s from display_frame. Applies when the queue/done files changed, when the game has a new
+-- table, or when one of our records was reset; otherwise it does nothing. No key press needed.
+local tick_t, a_sig, a_app = -10, nil, nil
+function m.tick()
+  if not safe_reads then return end   -- without ffi/pcall an early read could raise every frame: F9 only
+  local now = os.clock()
+  if now - tick_t < 3 then return end
+  tick_t = now
+  local app = table_info()
+  if not app then return end   -- game not loaded yet
+  local sig = slurp(CSV) .. "|" .. slurp(DONE) .. "|" .. slurp(NW) .. "|" .. slurp(SIG)
+  local reset = false
+  for _, pr in ipairs(probes) do
+    local s = rd(pr.addr, STRIDE)
+    if not s or rec_id(s) ~= pr.id or s:byte(5) % 2 == 0 then reset = true end
+  end
+  if sig == a_sig and app == a_app and not reset then return end
+  if m.apply(true) then
+    a_sig, a_app = slurp(CSV) .. "|" .. slurp(DONE) .. "|" .. slurp(NW) .. "|" .. slurp(SIG), app   -- apply rewrites the files: remember the new state
+  end
 end
 
 function m.key_down(ctx, vkey)
@@ -286,9 +421,9 @@ function m.overlay_on(ctx) return "faceai [F9 apply | F10 snapshot | F11 find pl
 -- we manage (queue + done) are taken out of those lines first (original kept once as fl26world.txt.faceai-orig).
 local function strip_world()
   local ex = {}
-  for _, path in ipairs({CSV, DONE}) do
+  for _, path in ipairs({CSV, DONE, NW}) do
     local rows = load_csv(path)
-    if rows then for id in pairs(rows) do ex[id] = true end end
+    if rows and (path ~= NW or world_ok()) then for id in pairs(rows) do ex[id] = true end end
   end
   if not any(ex) then return end
   local path = ctx_ref.sider_dir .. "modules\\fl26world.txt"
@@ -327,6 +462,7 @@ function m.init(ctx)
   ctx_ref = ctx
   strip_world()
   ctx.register("key_down", m.key_down); ctx.register("overlay_on", m.overlay_on)
-  log("faceai loaded: F9 applies " .. CSV)
+  pcall(ctx.register, "display_frame", m.tick)
+  log("faceai loaded: applies " .. CSV .. " by itself (and on F9)")
 end
 return m
